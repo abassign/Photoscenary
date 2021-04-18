@@ -7,6 +7,7 @@ The program is run with the command:
 julia -t 10 photoscenary.jl -p /home/user/photoscenery/Orthophotos --lat 45.66 --lon 9.7 -r 15 -s 3
 
 where:
+
 -p : the path of photoscenary
 --lat : the latitude of the central location of the area
 --lon : the longitude of the central location of the area
