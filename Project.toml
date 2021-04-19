@@ -1,2 +1,7 @@
 [deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+ImageMagick = "6218d12a-5da1-5696-b52f-db25d2ecc6d1"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"

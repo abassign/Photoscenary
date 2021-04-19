@@ -148,6 +148,16 @@ function setPath(root,pathLiv1,pathLiv2)
 end
 
 
+function createRootPath(path,writePath)
+    Base.Sys.iswindows() ? slashType = '\\' : slashType = '/'
+    if path[1] == slashType path = path[1:end] end
+    if path[end] == slashType path = path[1:end-1] end
+    if writePath[1] == slashType writePath = writePath[1:end] end
+    if writePath[end] == slashType writePath = writePath[1:end-1] end
+    return path * slashType * writePath
+end
+
+
 function createDDSFile(rootPath,cmg,sizeWidth,sizeHight,overWriteTheTiles,debugLevel)
     theBatchIsNotCompleted = false
     t0 = time()
@@ -233,7 +243,7 @@ function parseCommandline()
         "--radius", "-r"
             help = "Distance Radius around the center point (nm)"
             arg_type = Float64
-            default = 100.0
+            default = 10.0
         "--size", "-s"
             help = "Max size of image 0->512 1->1024 2->2048 3->4096 4->8192 5->16384"
             arg_type = Int64
@@ -245,7 +255,7 @@ function parseCommandline()
         "--path", "-p"
             help = "Path to store the dds images"
             arg_type = String
-            default = "/home/abassign/photoscenery/Orthophotos"
+            default = "fgfs-scenary/photoscenery"
         "--debug", "-d"
             help = "Debug level"
             arg_type = Int64
@@ -262,7 +272,7 @@ end
 
 function main(args)
     parsedArgs = parseCommandline()
-    rootPath = parsedArgs["path"]
+    cd(); rootPath = pwd() * "/" * createRootPath(parsedArgs["path"],"Orthophotos")
     debugLevel = parsedArgs["debug"]
     centralPointRadiusDistance = parsedArgs["radius"]
     centralPointLat = parsedArgs["lat"]
@@ -314,11 +324,12 @@ function main(args)
     timeElaborationForAllTiles = 0.0
     timeElaborationForAllTilesResidual = 0.0
     timeStart = time()
-    println("Start the elaboration for $numbersOfTilesToElaborate tiles the Area deg is",
+    println("\nStart the elaboration for $numbersOfTilesToElaborate tiles the Area deg is",
         @sprintf(" latLL: %02.3f",latLL),
         @sprintf(" lonLL: %03.3f",lonLL),
         @sprintf(" latUR: %02.3f",latUR),
-        @sprintf(" lonUR: %03.3f",lonUR))
+        @sprintf(" lonUR: %03.3f",lonUR),
+        " The images path is: $rootPath")
     activeThreads = 0
 
     # Download thread
