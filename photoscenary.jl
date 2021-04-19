@@ -59,10 +59,10 @@ longDegOnLatitudeNm(lat) = 2 * pi * 6371.0 * 0.53996 * cosd(lat) / 360.0
 longDegOnLongitudeNm() = pi * 6378.0 * 0.53996 / 180
 
 latDegByCentralPoint(lat,lon,radius) = (
-    round(lat - (radius/longDegOnLongitudeNm()),digits=1),
-    round(lon - (radius/longDegOnLatitudeNm(lat)),digits=1),
-    round(lat + (radius/longDegOnLongitudeNm()),digits=1),
-    round(lon + (radius/longDegOnLatitudeNm(lat)),digits=1))
+    round((lat -  mod(lat,0.125)) - (radius/longDegOnLongitudeNm()),digits=1),
+    round((lon -  mod(lon,0.125)) - (radius/longDegOnLatitudeNm(lat)),digits=1),
+    round((lat - mod(lat,0.125) + 0.125) + (radius/longDegOnLongitudeNm()),digits=1),
+    round((lon - mod(lon,0.125) + 0.125)+ (radius/longDegOnLatitudeNm(lat)),digits=1))
 
 
 # Coordinates matrix generator
