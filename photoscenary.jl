@@ -233,7 +233,7 @@ function parseCommandline()
         "--radius", "-r"
             help = "Distance Radius around the center point (nm)"
             arg_type = Float64
-            default = 10.0
+            default = 0.0
         "--size", "-s"
             help = "Max size of image 0->512 1->1024 2->2048 3->4096 4->8192 5->16384"
             arg_type = Int64
@@ -298,14 +298,20 @@ function main(args)
     # Only for testing! Remove when cols function is implemented
     cols = 1
 
-    if abs(parsedArgs["latll"]) + abs(parsedArgs["lonll"]) + abs(parsedArgs["latur"]) + abs(parsedArgs["lonur"]) > 0.1
+    # Check if the coordinates are consistent
+    systemCoordinatesIsPolar = nothing
+    if (parsedArgs["latll"] < parsedArgs["latur"]) && (parsedArgs["lonll"] < parsedArgs["lonur"])
         latLL = round(parsedArgs["latll"],digits=3)
         lonLL = round(parsedArgs["lonll"],digits=3)
         latUR = round(parsedArgs["latur"],digits=3)
         lonUR = round(parsedArgs["lonur"],digits=3)
-    elseif centralPointLat != nothing && centralPointLon != nothing && centralPointRadiusDistance > 0.0
+        systemCoordinatesIsPolar = false
+    end
+    if centralPointLat != nothing && centralPointLon != nothing && centralPointRadiusDistance > 0.0 && systemCoordinatesIsPolar == nothing
         (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(centralPointLat,centralPointLon,centralPointRadiusDistance)
-    else
+        systemCoordinatesIsPolar = true
+    end
+    if systemCoordinatesIsPolar == nothing
         println("\nError: processing will end as the entered coordinates are not consistent")
         return 0.0
     end
