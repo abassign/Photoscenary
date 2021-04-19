@@ -148,16 +148,6 @@ function setPath(root,pathLiv1,pathLiv2)
 end
 
 
-function createRootPath(path,writePath)
-    Base.Sys.iswindows() ? slashType = '\\' : slashType = '/'
-    if path[1] == slashType path = path[1:end] end
-    if path[end] == slashType path = path[1:end-1] end
-    if writePath[1] == slashType writePath = writePath[1:end] end
-    if writePath[end] == slashType writePath = writePath[1:end-1] end
-    return path * slashType * writePath
-end
-
-
 function createDDSFile(rootPath,cmg,sizeWidth,sizeHight,overWriteTheTiles,debugLevel)
     theBatchIsNotCompleted = false
     t0 = time()
@@ -166,8 +156,8 @@ function createDDSFile(rootPath,cmg,sizeWidth,sizeHight,overWriteTheTiles,debugL
         path = setPath(rootPath,tp[1],tp[2])
         if path != nothing
             tileIndex = tp[7]
-            imageWithPathTypePNG = path * "/" * string(tp[7]) * ".png"
-            imageWithPathTypeDDS = path * "/" * string(tp[7]) * ".dds"
+            imageWithPathTypePNG = normpath(path * "/" * string(tp[7]) * ".png")
+            imageWithPathTypeDDS = normpath(path * "/" * string(tp[7]) * ".dds")
             if overWriteTheTiles > 0 && isfile(imageWithPathTypeDDS) rm(imageWithPathTypeDDS) end
             if isfile(imageWithPathTypeDDS) == false
                 if isfile(imageWithPathTypePNG) == false
@@ -272,7 +262,7 @@ end
 
 function main(args)
     parsedArgs = parseCommandline()
-    cd(); rootPath = pwd() * "/" * createRootPath(parsedArgs["path"],"Orthophotos")
+    cd(); rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
     debugLevel = parsedArgs["debug"]
     centralPointRadiusDistance = parsedArgs["radius"]
     centralPointLat = parsedArgs["lat"]
