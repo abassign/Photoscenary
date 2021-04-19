@@ -1,3 +1,10 @@
+#=
+
+Autor: Adriano Bassignana Bargamo 2021
+Licence: GPL 2
+
+=#
+
 import ImageMagick
 
 using ArgParse
