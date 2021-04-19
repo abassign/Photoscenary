@@ -209,19 +209,19 @@ function parseCommandline()
         "--latll"
             help = "Lower left area lat"
             arg_type = Float64
-            default = 45.0
+            default = 0.0
         "--lonll"
             help = "Lower left area lon"
             arg_type = Float64
-            default = 9.0
+            default = 0.0
         "--latur"
             help = "Upper right area lat"
             arg_type = Float64
-            default = 45.95
+            default = 0.0
         "--lonur"
             help = "Upper right area lon"
             arg_type = Float64
-            default = 10.95
+            default = 0.0
         "--lat", "-a"
             help = "Latitude in deg of central point"
             arg_type = Float64
@@ -233,7 +233,7 @@ function parseCommandline()
         "--radius", "-r"
             help = "Distance Radius around the center point (nm)"
             arg_type = Float64
-            default = 10.0
+            default = 0.0
         "--size", "-s"
             help = "Max size of image 0->512 1->1024 2->2048 3->4096 4->8192 5->16384"
             arg_type = Int64
@@ -298,13 +298,22 @@ function main(args)
     # Only for testing! Remove when cols function is implemented
     cols = 1
 
-    if centralPointLat != nothing && centralPointLon != nothing && centralPointRadiusDistance > 0.0
-        (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(centralPointLat,centralPointLon,centralPointRadiusDistance)
-    else
+    # Check if the coordinates are consistent
+    systemCoordinatesIsPolar = nothing
+    if (parsedArgs["latll"] < parsedArgs["latur"]) && (parsedArgs["lonll"] < parsedArgs["lonur"])
         latLL = round(parsedArgs["latll"],digits=3)
         lonLL = round(parsedArgs["lonll"],digits=3)
         latUR = round(parsedArgs["latur"],digits=3)
         lonUR = round(parsedArgs["lonur"],digits=3)
+        systemCoordinatesIsPolar = false
+    end
+    if centralPointLat != nothing && centralPointLon != nothing && centralPointRadiusDistance > 0.0 && systemCoordinatesIsPolar == nothing
+        (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(centralPointLat,centralPointLon,centralPointRadiusDistance)
+        systemCoordinatesIsPolar = true
+    end
+    if systemCoordinatesIsPolar == nothing
+        println("\nError: processing will end as the entered coordinates are not consistent")
+        return 0.0
     end
 
     # Generate the coordinate matrix
