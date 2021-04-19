@@ -175,7 +175,11 @@ function createDDSFile(rootPath,cmg,sizeWidth,sizeHight,overWriteTheTiles,debugL
                     end
                 end
                 try
-                    run(`convert $imageWithPathTypePNG -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS`)
+                    if Base.Sys.iswindows()
+                        run(`magick convert $imageWithPathTypePNG -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS`)
+                    else
+                        run(`convert $imageWithPathTypePNG -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS`)
+                    end
                     if debugLevel > 0 println("The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
                     rm(imageWithPathTypePNG)
                 catch err
