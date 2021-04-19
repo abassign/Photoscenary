@@ -245,7 +245,7 @@ function parseCommandline()
         "--path", "-p"
             help = "Path to store the dds images"
             arg_type = String
-            default = "fgfs-scenary/photoscenery"
+            default = "fgfs-scenery/photoscenery"
         "--debug", "-d"
             help = "Debug level"
             arg_type = Int64
