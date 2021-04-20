@@ -5,13 +5,33 @@ Licence: GPL 2
 
 =#
 
-import ImageMagick
+using Pkg
 
-using ArgParse
-using Printf
-using HTTP
-using FileIO
+try
+    import ImageMagick
+    using LightXML
+    using ArgParse
+    using Printf
+    using HTTP
+    using FileIO
+catch
+    println("\nInstal the packeges necessary for photoscenary.jl execution")
+    Pkg.add("LightXML")
+    Pkg.add("ImageMagick")
+    Pkg.add("ArgParse")
+    Pkg.add("Printf")
+    Pkg.add("HTTP")
+    Pkg.add("FileIO")
+    println("\nRemember that for you need to make sure you have the ImageMagick program installed https://imagemagick.org/")
+    import ImageMagick
+    using LightXML
+    using ArgParse
+    using Printf
+    using HTTP
+    using FileIO
+end
 
+versionProgram = "0.1.1"
 
 # Test set:
 # python3 creator.py --lat 38 --lon 16 --info_only
@@ -63,6 +83,53 @@ latDegByCentralPoint(lat,lon,radius) = (
     round((lon -  mod(lon,0.125)) - (radius/longDegOnLatitudeNm(lat)),digits=1),
     round((lat - mod(lat,0.125) + 0.125) + (radius/longDegOnLongitudeNm()),digits=1),
     round((lon - mod(lon,0.125) + 0.125)+ (radius/longDegOnLatitudeNm(lat)),digits=1))
+
+
+# Inizialize section
+
+function inizializeParams()
+    # Build the paramsXml
+    paramsXml = nothing
+    if isfile("params.xml")
+        paramsXml = parse_file("params.xml")
+        if "params" == lowercase(name(root(paramsXml)))
+            xroot = root(paramsXml)
+            ces = get_elements_by_tagname(xroot,"versioning")
+            if ces != nothing && find_element(ces[1],"version") != nothing
+                set_content(find_element(ces[1],"version"),versionProgram)
+            end
+        end
+    end
+    if (paramsXml == nothing)
+        paramsXml = parse_string("<params><versioning><version>$versionProgram</version><autor>Adriano Bassignana</autor><year>2021</year><licence>GPL 2</licence></versioning></params>")
+    end
+    save_file(paramsXml,"params.xml")
+end
+
+
+function inizialize()
+    versionFromParams = nothing
+    if isfile("params.xml")
+        paramsXml = parse_file("params.xml")
+        if "params" == lowercase(name(root(paramsXml)))
+            xroot = root(paramsXml)
+            ces = get_elements_by_tagname(xroot,"versioning")
+            if ces != nothing && find_element(ces[1],"version") != nothing
+                versionFromParams = content(find_element(ces[1],"version"))
+            end
+        end
+    end
+    if versionFromParams == nothing || versionFromParams != versionProgram
+        println("\nThe program version is change old version is $versionFromParams the actual version is $versionProgram")
+        inizializeParams()
+    end
+    println('\n',"Photoscenery generator by Julia compilator,\nProgram for uploading Orthophotos files\n")
+    paramsXml = parse_file("params.xml")
+    if "params" == lowercase(name(root(paramsXml)))
+        ces = get_elements_by_tagname(root(paramsXml),"versioning")
+        println(ces[1])
+    end
+end
 
 
 # Coordinates matrix generator
@@ -250,19 +317,43 @@ function parseCommandline()
             help = "Debug level"
             arg_type = Int64
             default = 0
+        "--version"
+            help = "Program version"
+            action = :store_true
     end
-    println("Parsed args:")
 
-    parsedArgs = parse_args(ARGS, s)
-    for (arg,val) in parsedArgs
-        println("  $arg  =>  $val")
-    end
     return parse_args(s)
 end
 
+
 function main(args)
+
+    inizialize()
+
     parsedArgs = parseCommandline()
-    cd(); rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+
+    if parsedArgs["version"]
+        return 0
+    end
+
+    # Path prepare
+    pathToTest = normpath(parsedArgs["path"])
+    if Base.Sys.iswindows()
+        if pathToTest[2] == ':' || pathToTest[1] == '\\'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
+    else
+        if pathToTest[1] == '/'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
+    end
+    # Another options
     debugLevel = parsedArgs["debug"]
     centralPointRadiusDistance = parsedArgs["radius"]
     centralPointLat = parsedArgs["lat"]
@@ -328,7 +419,7 @@ function main(args)
         @sprintf(" lonLL: %03.3f",lonLL),
         @sprintf(" latUR: %02.3f",latUR),
         @sprintf(" lonUR: %03.3f",lonUR),
-        " The images path is: $rootPath")
+        "\nThe images path is: $rootPath\n")
     activeThreads = 0
 
     # Download thread
@@ -361,7 +452,7 @@ function main(args)
             end
         end
     end
-    println("\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate)
+    println("\n\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate)
 
 end
 
