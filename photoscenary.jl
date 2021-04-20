@@ -250,6 +250,10 @@ function parseCommandline()
             help = "Debug level"
             arg_type = Int64
             default = 0
+        "--version"
+            help = "Program version"
+            arg_type = String
+            default = "0.1.1"
     end
     println("Parsed args:")
 
@@ -262,7 +266,24 @@ end
 
 function main(args)
     parsedArgs = parseCommandline()
-    cd(); rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+    # Path prepare
+    pathToTest = normpath(parsedArgs["path"])
+    if Base.Sys.iswindows()
+        if pathToTest[2] == ':' || pathToTest[1] == '\\'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
+    else
+        if pathToTest[1] == '/'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
+    end
+    # Another options
     debugLevel = parsedArgs["debug"]
     centralPointRadiusDistance = parsedArgs["radius"]
     centralPointLat = parsedArgs["lat"]
@@ -317,7 +338,7 @@ function main(args)
     end
 
     # Generate the coordinate matrix
-    cmgs = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,cols,debugLevel)
+    @time cmgs = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,cols,debugLevel)
     numbersOfTilesToElaborate = cmgs[2]
     numbersOfTilesElaborate = 0
     timeElaborationForAllTiles = 0.0
@@ -328,7 +349,7 @@ function main(args)
         @sprintf(" lonLL: %03.3f",lonLL),
         @sprintf(" latUR: %02.3f",latUR),
         @sprintf(" lonUR: %03.3f",lonUR),
-        " The images path is: $rootPath")
+        "\nThe images path is: $rootPath\n")
     activeThreads = 0
 
     # Download thread
