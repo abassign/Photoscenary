@@ -3,9 +3,18 @@
 Autor: Adriano Bassignana Bargamo 2021
 Licence: GPL 2
 
+Exite code:
+0 - regular execution
+1 - The version check did not pass
+
 =#
 
 using Pkg
+
+if VERSION < v"1.5.4"
+    println("The actiual Julia is ",VERSION, " The current version is too old, please upgrade Julia from version 1.5.4 and later")
+    exit(code = 1)
+end
 
 try
     import ImageMagick
@@ -134,19 +143,13 @@ end
 
 # Coordinates matrix generator
 
-function coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,cols = 1,isDebug = true)
+function coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,cols,systemCoordinatesIsPolar,isDebug)
     numberOfTiles = 0
     # Normalization to 0.125 deg
     latLL = latLL - mod(latLL,0.125)
-    lonLL = lonLL - mod(lonLL,0.125)
+    lonLL = lonLL - mod(lonLL,0.250)
     latUR = latUR - mod(latUR,0.125) + 0.125
-    lonUR = lonUR - mod(lonUR,0.125) + 0.125
-    if isDebug > 0
-        println("\nCoordinateMatrix generator")
-        # Ver: println("latLL: ",latLL," lonLL ",lonLL," latUR: ",latUR," lonUR ",lonUR," LinRange: ",LinRange(lonLL,lonUR,floor(Int,lonUR-lonLL) * 10)," Col: ",cols)
-        println("latLL: ",latLL," lonLL ",lonLL," latUR: ",latUR," lonUR ",lonUR," Col: ",cols)
-        println("----------")
-    end
+    lonUR = lonUR - mod(lonUR,0.250) + 0.250
     a = [(
             string(lon >= 0.0 ? "e" : "o",@sprintf("%03d",floor(lon,digits=-1)),lat >= 0.0 ? "n" : "s",@sprintf("%02d",floor(lat,digits=-1))),
             string(lon >= 0.0 ? "e" : "o",@sprintf("%03d",floor(Int,lon)),lat >= 0.0 ? "n" : "s",@sprintf("%02d",floor(Int,lat))),
@@ -192,11 +195,15 @@ function coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,cols = 1,isDebug = tr
     if c != nothing
         push!(d,c)
     end
+
     if isDebug > 0
-        println("----------")
+        println("\n----------")
+        println("CoordinateMatrix generator")
+        println("latLL: ",latLL," lonLL ",lonLL," latUR: ",latUR," lonUR ",lonUR,"x: ","y:"," Col: ",cols,'\n')
         println("Number of tiles to process: $numberOfTiles")
         println("----------\n")
     end
+
     return d,numberOfTiles
 end
 
@@ -366,7 +373,11 @@ function main(args)
     size = parsedArgs["size"]
     sizeWidth = 512
     sizeHight = 256
+
+    # Only for testing! Remove when cols function is implemented
+    if size > 3 size = 3 end
     cols = 1
+
     if size == 1
         sizeWidth = 1024
         sizeHight = 512
@@ -385,9 +396,6 @@ function main(args)
         sizeHight = 8192
         cols = 4
     end
-
-    # Only for testing! Remove when cols function is implemented
-    cols = 1
 
     # Check if the coordinates are consistent
     systemCoordinatesIsPolar = nothing
@@ -408,7 +416,7 @@ function main(args)
     end
 
     # Generate the coordinate matrix
-    cmgs = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,cols,debugLevel)
+    cmgs = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,cols,systemCoordinatesIsPolar,debugLevel)
     numbersOfTilesToElaborate = cmgs[2]
     numbersOfTilesElaborate = 0
     timeElaborationForAllTiles = 0.0
@@ -438,7 +446,7 @@ function main(args)
             numbersOfTilesElaborate += 1
             timeElaborationForAllTiles += timeElaboration
             timeElaborationForAllTilesResidual = (timeElaborationForAllTiles / numbersOfTilesElaborate) * (numbersOfTilesToElaborate - numbersOfTilesElaborate)
-            println(@sprintf("Time elab: %5.1f ",time()-timeStart),"Residual time to finish: ",@sprintf(" %5.1f",timeElaborationForAllTilesResidual)," Elab. tiles: ",numbersOfTilesToElaborate," residual tiles: ",(numbersOfTilesToElaborate - numbersOfTilesElaborate)," Thread: ",activeThreads)
+            println(@sprintf("Time elab: %5.1f ",time()-timeStart),"Residual time to finish: ",@sprintf(" %5.1f",timeElaborationForAllTilesResidual)," Elab. tiles: ",numbersOfTilesToElaborate," residual tiles: ",(numbersOfTilesToElaborate - numbersOfTilesElaborate)," threads used: ",activeThreads)
             activeThreads -= 1
         end
         # Check the incomplete Tiles
