@@ -1,5 +1,5 @@
 # Photoscenery
-Programs to generate and manipulate photoscenaries for FGFS
+Programs to generate and manipulate photosceneries for FGFS
 
 The program is written entirely in JULIA and therefore requires JULIA to be installed on your system.
 The program, for example, you can run it with this command:
@@ -18,5 +18,5 @@ where:
 The program has other options:
 --latll --lonll : latitude and longitude of lower left corner of the area
 --latur --lonur : latitude and longitude of upper right corner of the area
---over : Forces overwriting of scenario files. with a numerical value greater than or equal to 1. This option allows you to build variable size photoscenaries of the tiles, for example it is possible to create a low resolution photo scene in a large area, for example 100 nm, but then make a photo scene around an airport with a high resolution 10 nm radius
+--over : Forces overwriting of scenery files. with a numerical value greater than or equal to 1. This option allows you to build variable size photosceneries of the tiles, for example it is possible to create a low resolution photo scene in a large area, for example 100 nm, but then make a photo scene around an airport with a high resolution 10 nm radius
 -d : with a numerical value greater than or equal to 1 the debug log is activate
