@@ -24,7 +24,7 @@ try
     using HTTP
     using FileIO
 catch
-    println("\nInstal the packeges necessary for photoscenary.jl execution")
+    println("\nInstal the packeges necessary for photoscenery.jl execution")
     Pkg.add("LightXML")
     Pkg.add("ImageMagick")
     Pkg.add("ArgParse")
