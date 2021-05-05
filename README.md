@@ -1,17 +1,17 @@
-# Photoscenary
+# Photoscenery
 Programs to generate and manipulate photoscenaries for FGFS
 
 The program is written entirely in JULIA and therefore requires JULIA to be installed on your system.
 The program, for example, you can run it with this command:
 
-julia -t 10 photoscenary.jl --lat 45.66 --lon 9.7 -r 15 -s 3
+julia -t 10 photoscenery.jl --lat 45.66 --lon 9.7 -r 15 -s 3
 
 where:
 
--p : the path of photoscenary
+-p : the path of photoscenery
 --lat : the latitude of the central location of the area
 --lon : the longitude of the central location of the area
--r : the radius of the area to be covered with the photoscenary
+-r : the radius of the area to be covered with the photoscenery
 -s : the resolution of the individual tiles (0 = 512x256 1 = 1024x512 2 = 2048x1024 3 = 4096x2048) 
      Two new resolutions are planned in the future: 4 = 8192.4096 and 5 = 16384x8192
      
