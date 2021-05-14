@@ -62,12 +62,15 @@ if VERSION < v"1.5.4"
     ccall(:jl_exit, Cvoid, (Int32,), 500)
 end
 
-homeProgramPath = pwd()
 
+versionProgram = "0.2.1"
+versionProgramDate = "Testing 20210514"
+
+homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
 
 # Test for ImageMagick presence
-println("\nPhotoscenary.jl System prerequisite test\n")
+println("\nPhotoscenary.jl ver: $versionProgram date: $versionProgramDate System prerequisite test\n")
 
 try
     using ImageView
@@ -120,9 +123,6 @@ catch
 end
 
 @everywhere using SharedArrays
-
-versionProgram = "0.2.0"
-versionProgramDate = "Testing 20210703"
 
 # Test set:
 # python3 creator.py --lat 38 --lon 16 --info_only
@@ -555,8 +555,10 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
     theBatchIsNotCompleted = false
     t0 = time()
     timeElaboration = nothing
-    theDDSFileIsOk = false
+    theDDSFileIsOk = 0
     tileIndex = 0
+    fileSizePNG = 0
+    fileSizeDDS = 0
 
     path = setPath(rootPath,tp[1],tp[2])
     if path != nothing
@@ -568,16 +570,25 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
         dataFileImageDDS = getDDSSize(imageWithPathTypeDDS)
         createDDSFile = false
         # Any images with PNG format are deleted
-        ## println("#> $(dataFileImageDDS[1]) $overWriteTheTiles $(dataFileImageDDS[2]) $sizeWidth")
         if isfile(imageWithPathTypePNG) rm(imageWithPathTypePNG) end
         if dataFileImageDDS[1]
-            if overWriteTheTiles >= 2 || dataFileImageDDS[2] < 512 || dataFileImageDDS[2] > 32768
+            if overWriteTheTiles >= 9
+                rm(imageWithPathTypeDDS)
+                theDDSFileIsOk = -1
+            elseif overWriteTheTiles == 2 || dataFileImageDDS[2] < 512 || dataFileImageDDS[2] > 32768
                 createDDSFile = true
             elseif overWriteTheTiles == 1 && sizeWidth > dataFileImageDDS[2]
                 createDDSFile = true
+            else
+                theDDSFileIsOk = -3
             end
         else
-            createDDSFile = true
+            if isfile(imageWithPathTypeDDS) rm(imageWithPathTypeDDS) end
+            if overWriteTheTiles < 9
+                createDDSFile = true
+            else
+                theDDSFileIsOk = -2
+            end
         end
 
         if createDDSFile
@@ -590,16 +601,19 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
                     # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
                     # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
                     # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
+                    oldFileIsPresent = isfile(imageWithPathTypeDDS)
+                    fileSizePNG = stat(imageWithPathTypePNG).size
                     if Base.Sys.iswindows()
                         run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
                     else
                         imageMagickPath != nothing ? imageMagickWithPathUnix = normpath(imageMagickPath * "/" * "convert") : imageMagickWithPathUnix = "convert"
                         run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
                     end
+                    fileSizeDDS = stat(imageWithPathTypeDDS).size
                     if debugLevel > 0 println("createDDSFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
                     rm(imageWithPathTypePNG)
                     theBatchIsNotCompleted = false
-                    theDDSFileIsOk = true
+                    oldFileIsPresent ? theDDSFileIsOk = 2 : theDDSFileIsOk = 1
                     timeElaboration = time()-t0
                 catch err
                     if debugLevel > 1 println("createDDSFile - Error to convert the $imageWithPathTypePNG file in dds format") end
@@ -613,12 +627,9 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
             else
                 theBatchIsNotCompleted = true
             end
-        else
-            if debugLevel > 0 println("","createDDSFile - The file ",string(tp[7]) * ".png (",tp[3],":",tp[5]," ",tp[4],":",tp[6],") is existent at ",path) end
-            theDDSFileIsOk = true
         end
     end
-    return theBatchIsNotCompleted, tileIndex, theDDSFileIsOk, timeElaboration
+    return theBatchIsNotCompleted, tileIndex, theDDSFileIsOk, timeElaboration, string(tp[7]) * ".dds","../" * tp[1] * "/" * tp[2], fileSizePNG, fileSizeDDS
 end
 
 
@@ -655,7 +666,7 @@ function parseCommandline()
         "--icao", "-i"
             help = "ICAO airport code for extract LAT and LON"
             arg_type = String
-            default = "LIME"
+            default = nothing
         "--tile", "-t"
             help = "Tile index es coordinate reference"
             arg_type = Int64
@@ -724,6 +735,9 @@ end
 
 function main(args)
 
+    centralPointLon = nothing
+    centralPointLat = nothing
+
     imageMagickPath = inizialize()
     (imageMagickStatus, imageMagickPath) = checkImageMagick(imageMagickPath)
     if !imageMagickStatus
@@ -732,6 +746,8 @@ function main(args)
     end
 
     parsedArgs = parseCommandline()
+    debugLevel = parsedArgs["debug"]
+    if debugLevel > 1 @info "parsedArgs:" parsedArgs end
 
     if parsedArgs["version"]
         return 0
@@ -754,10 +770,11 @@ function main(args)
             rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
         end
     end
-    # Another options
+
+    # Process anothers options
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
-    debugLevel = parsedArgs["debug"]
     centralPointRadiusDistance = parsedArgs["radius"]
+
     if parsedArgs["tile"] != nothing
         centralPointLon = coordFromIndex(parsedArgs["tile"])[1]
         centralPointLat = coordFromIndex(parsedArgs["tile"])[2]
@@ -776,6 +793,7 @@ function main(args)
                         centralPointLon = r[2]
                         icaoToFind = r[3] * " (" * r[4] * ")"
                         icaoIsFound = 200
+                        if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
                         break
                     end
                 catch
@@ -795,6 +813,7 @@ function main(args)
     else
         centralPointLat = parsedArgs["lat"]
         centralPointLon = parsedArgs["lon"]
+        if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
     end
 
     if centralPointLat == nothing || centralPointLon == nothing
@@ -803,7 +822,6 @@ function main(args)
     end
 
     overWriteTheTiles = parsedArgs["over"]
-
     size = parsedArgs["size"]
 
     # Only for testing! Remove when cols function is implemented
@@ -846,7 +864,7 @@ function main(args)
     end
     if systemCoordinatesIsPolar == nothing
         println("\nError: processing will end as the entered coordinates are not consistent")
-        return 0.0
+        ccall(:jl_exit, Cvoid, (Int32,), 505)
     end
 
     # Download thread
@@ -860,6 +878,8 @@ function main(args)
     timeElaborationForAllTilesResidual = 0.0
     timeStart = time()
     ifFristCycle = true
+    totalByteDDS = 0
+    totalBytePNG = 0
 
     while continueToReatray
         # Generate the coordinate matrix
@@ -881,8 +901,8 @@ function main(args)
         while cmgsExtractTest(cmgs)
             Threads.@threads for cmg in cmgsExtract(cmgs,cols)
                 theBatchIsNotCompleted = false
-                (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration) = createDDSFile(rootPath,cmg,sizeWidth,cols,overWriteTheTiles,imageMagickPath,debugLevel)
-                if theDDSFileIsOk
+                (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidth,cols,overWriteTheTiles,imageMagickPath,debugLevel)
+                if theDDSFileIsOk >= 1
                     numbersOfTilesElaborate += 1
                     if timeElaboration != nothing && theBatchIsNotCompleted == false
                         timeElaborationForAllTilesInserted += timeElaboration
@@ -900,25 +920,49 @@ function main(args)
                     end
                     unCompletedTilesNumber += 1
                 end
-                if theDDSFileIsOk
+                if theDDSFileIsOk != 0
+                    if theDDSFileIsOk == 1
+                        theDDSFileIsOkStatus = "(Inserted)"
+                        totalBytePNG += fileSizePNG
+                        totalByteDDS += fileSizeDDS
+                    elseif theDDSFileIsOk == 2
+                        totalBytePNG += fileSizePNG
+                        totalByteDDS += fileSizeDDS
+                        theDDSFileIsOkStatus = "(Updated) "
+                    elseif theDDSFileIsOk == -1
+                        theDDSFileIsOkStatus = "(Removed) "
+                    elseif theDDSFileIsOk == -2
+                        theDDSFileIsOkStatus = "(Nothing) "
+                    elseif theDDSFileIsOk == -3
+                        theDDSFileIsOkStatus = "(Skip) "
+                    end
                     timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
                     println('\r',
                         @sprintf("Time: %5.1f ",time()-timeStart),
                         @sprintf(" elab: %5.1f ",timeElaborationForAllTilesInserted),
                         @sprintf(" (%4.1f|",(time()-timeStart) / numbersOfTilesInserted),
                         @sprintf("%5.0f)",timeElaborationForAllTilesResidual),
-                        " Tiles: ",numbersOfTilesToElaborate,
-                        " elab: ",numbersOfTilesElaborate,
-                        " problem: ",unCompletedTilesNumber,
-                        " res.: ",(numbersOfTilesToElaborate - numbersOfTilesElaborate),
-                        " threads used: ",Threads.nthreads(),"                   ")
+                        @sprintf(" Tiles: %4d",numbersOfTilesElaborate),
+                        @sprintf(" on %4d",numbersOfTilesToElaborate),
+                        @sprintf(" res %4d",(numbersOfTilesToElaborate - numbersOfTilesElaborate)),
+                        @sprintf(" err %4d",unCompletedTilesNumber),
+                        @sprintf(" Th: %2d",Threads.nthreads()),
+                        " path: $pathRel/$tile ",
+                        @sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),
+                        @sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000),
+                        theDDSFileIsOkStatus
+                    )
+                else
+                    totalBytePNG += fileSizePNG
                 end
             end
         end
         # Check the incomplete Tiles
         continueToReatray = false
-        println("\nIncomplete tiles list:")
+        isIncompleteTileList = false
         for idTile in collect(keys(unCompletedTiles))
+            if !isIncompleteTileList println("\nIncomplete tiles list:") end
+            isIncompleteTileList = true
             println("Tile id: ",idTile," attemps: ",unCompletedTiles[idTile])
             if unCompletedTiles[idTile] < unCompletedTilesMaxAttemps
                 continueToReatray = true
@@ -927,7 +971,7 @@ function main(args)
         end
         ifFristCycle = false
     end
-    println("\n\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate," time for tile: ",@sprintf("%5.1f)",(time()-timeStart)/numbersOfTilesToElaborate))
+    println("\n\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate," time for tile: ",@sprintf("%5.1f",(time()-timeStart)/numbersOfTilesToElaborate),@sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),@sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000))
 
 end
 

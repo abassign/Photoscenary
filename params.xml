@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <params>
   <versioning>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
     <autor>Adriano Bassignana</autor>
     <year>2021</year>
     <licence>GPL 2</licence>
   </versioning>
   <imageMagick>
-      <path></path>
+      <path/>
   </imageMagick>
 </params>
