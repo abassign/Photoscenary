@@ -63,8 +63,8 @@ if VERSION < v"1.5.4"
 end
 
 
-versionProgram = "0.2.1"
-versionProgramDate = "Testing 20210514"
+versionProgram = "0.2.2"
+versionProgramDate = "Testing 20210515"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -690,7 +690,7 @@ function parseCommandline()
         "--attemps"
             help = "Number of download attempts"
             arg_type = Int64
-            default = 0
+            default = 2
         "--debug", "-d"
             help = "Debug level"
             arg_type = Int64
@@ -773,6 +773,7 @@ function main(args)
 
     # Process anothers options
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
+    unCompletedTilesAttemps = 0
     centralPointRadiusDistance = parsedArgs["radius"]
 
     if parsedArgs["tile"] != nothing
@@ -849,6 +850,9 @@ function main(args)
         cols = 8
     end
 
+    unCompletedTilesMaxAttempsBaseSize = Int64(sizeWidth / 2)
+    if unCompletedTilesMaxAttempsBaseSize > 1024 unCompletedTilesMaxAttempsBaseSize = 1024 end
+
     # Check if the coordinates are consistent
     systemCoordinatesIsPolar = nothing
     if (parsedArgs["latll"] < parsedArgs["latur"]) && (parsedArgs["lonll"] < parsedArgs["lonur"])
@@ -871,7 +875,6 @@ function main(args)
     continueToReatray = true
     unCompletedTilesNumber = 0
     numbersOfTilesToElaborate = 0
-    numbersOfTilesToRepToElaborate = 0
     numbersOfTilesInserted = 0
     numbersOfTilesElaborate = 0
     timeElaborationForAllTilesInserted = 0.0
@@ -883,25 +886,39 @@ function main(args)
 
     while continueToReatray
         # Generate the coordinate matrix
+
+        # Resize management with smaller dimensions
+        if ifFristCycle
+            sizeWidthByAttemps = sizeWidth
+        else
+            if unCompletedTilesAttemps > 0
+                sizeWidthByAttemps = Int64(unCompletedTilesMaxAttempsBaseSize / 2^(unCompletedTilesAttemps - 1))
+            else
+                sizeWidthByAttemps = sizeWidth
+            end
+        end
+
         if ifFristCycle
             (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,nothing,debugLevel)
             numbersOfTilesToElaborate = cmgsSize
         else
             (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,unCompletedTiles,debugLevel)
-            numbersOfTilesToRepToElaborate = cmgsSize
+            numbersOfTilesToElaborate = cmgsSize
         end
-        println("\nStart the elaboration for $numbersOfTilesToElaborate tiles the Area deg is",
+        println("\nStart the elaboration n. $(unCompletedTilesAttemps+1) for $numbersOfTilesToElaborate tiles the Area deg is",
             @sprintf(" latLL: %02.3f",latLL),
             @sprintf(" lonLL: %03.3f",lonLL),
             @sprintf(" latUR: %02.3f",latUR),
             @sprintf(" lonUR: %03.3f",lonUR),
             " Batch size: $cmgsSize",
+            " Width pix: $sizeWidthByAttemps",
+            " Cycle: $unCompletedTilesAttemps",
             "\nThe images path is: $rootPath\n")
 
         while cmgsExtractTest(cmgs)
             Threads.@threads for cmg in cmgsExtract(cmgs,cols)
                 theBatchIsNotCompleted = false
-                (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidth,cols,overWriteTheTiles,imageMagickPath,debugLevel)
+                (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidthByAttemps,cols,overWriteTheTiles,imageMagickPath,debugLevel)
                 if theDDSFileIsOk >= 1
                     numbersOfTilesElaborate += 1
                     if timeElaboration != nothing && theBatchIsNotCompleted == false
@@ -918,7 +935,9 @@ function main(args)
                     else
                         push!(unCompletedTiles,tileIndex => 1)
                     end
-                    unCompletedTilesNumber += 1
+                    if ifFristCycle unCompletedTilesNumber += 1 end
+                else
+                    numbersOfTilesElaborate += 1
                 end
                 if theDDSFileIsOk != 0
                     if theDDSFileIsOk == 1
@@ -938,9 +957,9 @@ function main(args)
                     end
                     timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
                     println('\r',
-                        @sprintf("Time: %5.1f ",time()-timeStart),
-                        @sprintf(" elab: %5.1f ",timeElaborationForAllTilesInserted),
-                        @sprintf(" (%4.1f|",(time()-timeStart) / numbersOfTilesInserted),
+                        @sprintf("Time: %5.1f",time()-timeStart),
+                        @sprintf(" elab: %5.1f",timeElaborationForAllTilesInserted),
+                        @sprintf(" (%5.1f|",(time()-timeStart) / numbersOfTilesInserted),
                         @sprintf("%5.0f)",timeElaborationForAllTilesResidual),
                         @sprintf(" Tiles: %4d",numbersOfTilesElaborate),
                         @sprintf(" on %4d",numbersOfTilesToElaborate),
@@ -961,10 +980,13 @@ function main(args)
         continueToReatray = false
         isIncompleteTileList = false
         for idTile in collect(keys(unCompletedTiles))
-            if !isIncompleteTileList println("\nIncomplete tiles list:") end
+            if !isIncompleteTileList
+                println("\nIncomplete tiles list:")
+                unCompletedTilesAttemps += 1
+            end
             isIncompleteTileList = true
             println("Tile id: ",idTile," attemps: ",unCompletedTiles[idTile])
-            if unCompletedTiles[idTile] < unCompletedTilesMaxAttemps
+            if unCompletedTiles[idTile] <= unCompletedTilesMaxAttemps
                 continueToReatray = true
                 numbersOfTilesElaborate = 0
             end
