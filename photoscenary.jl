@@ -52,74 +52,91 @@ end
 =#
 
 using Pkg
-using Downloads
-using Logging
-
-restartIsRequestCauseUpgrade = false
 
 if VERSION < v"1.5.4"
-    println("The actiual Julia is ",VERSION, " The current version is too old, please upgrade Julia from version 1.5.4 and later (exit code 500)")
+    println("The actiual Julia is ",VERSION, " The current version is too old!\nPlease upgrade Julia to version 1.5.4 but preferably install the 1.6.x or later (exit code 500)")
     ccall(:jl_exit, Cvoid, (Int32,), 500)
+elseif VERSION >= v"1.6.0"
+    println("The actiual Julia is ",VERSION, " The current version is correct in order to obtain the best performances")
+else
+    println("The actiual Julia is ",VERSION, " The current version is correct,\nIn order to obtain the best performancesy install the 1.6.x or later version")
 end
 
 
-versionProgram = "0.2.2"
+versionProgram = "0.2.3"
 versionProgramDate = "Testing 20210515"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
 
-# Test for ImageMagick presence
 println("\nPhotoscenary.jl ver: $versionProgram date: $versionProgramDate System prerequisite test\n")
 
-try
-    using ImageView
-catch
-    println("\nInstal the extra packeges necessary for photoscenary.jl execution")
-    Pkg.add("ImageView") # If this is execute is necessary to restart Julia
-    global restartIsRequestCauseUpgrade = true
-end
 
-try
-    import ImageMagick
-    using Distributed
-    using LightXML
-    using ArgParse
-    using Printf
-    using HTTP
-    using FileIO
-    using Images
-    using ImageView
-    using ImageIO
-    using Libz
-    using CSV
-    using CSVFiles
-    using DataFrames
-    using DataFramesMeta
-catch
-    println("\nInstal the packeges necessary for photoscenary.jl execution")
-    Pkg.add("Distributed")
-    Pkg.add("LightXML")
-    Pkg.add("ImageMagick")
-    Pkg.add("ArgParse")
-    Pkg.add("Printf")
-    Pkg.add("HTTP")
-    Pkg.add("FileIO")
-    Pkg.add("Images")
-    Pkg.add("ImageView") # If this is execute is necessary to restart Julia
-    Pkg.add("ImageIO")
-    Pkg.add("Libz")
-    Pkg.add("CSV")
-    Pkg.add("CSVFiles")
-    Pkg.add("DataFrames")
-    Pkg.add("DataFramesMeta")
-    println("\nRemember that for you need to make sure you have the ImageMagick program installed https://imagemagick.org/")
-    if restartIsRequestCauseUpgrade
+begin
+
+    local restartIsRequestCauseUpgrade = 0
+
+    try
+        using ImageView
+    catch
+        restartIsRequestCauseUpgrade = 2
+    end
+
+    try
+        import ImageMagick
+        using Downloads
+        using Logging
+        using Distributed
+        using LightXML
+        using ArgParse
+        using Printf
+        using HTTP
+        using FileIO
+        using Images
+        using ImageIO
+        using Libz
+        using CSV
+        using CSVFiles
+        using DataFrames
+        using DataFramesMeta
+    catch
+        if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
+    end
+
+    try
+        if restartIsRequestCauseUpgrade >= 2
+            Pkg.add("ImageView") # If this is execute is necessary to restart Julia
+        end
+        if restartIsRequestCauseUpgrade >= 1
+            println("\nInstal the packeges necessary for photoscenary.jl execution")
+            Pkg.add("Downloads")
+            Pkg.add("Logging")
+            Pkg.add("Distributed")
+            Pkg.add("LightXML")
+            Pkg.add("ImageMagick")
+            Pkg.add("ArgParse")
+            Pkg.add("Printf")
+            Pkg.add("HTTP")
+            Pkg.add("FileIO")
+            Pkg.add("Images")
+            Pkg.add("ImageIO")
+            Pkg.add("Libz")
+            Pkg.add("CSV")
+            Pkg.add("CSVFiles")
+            Pkg.add("DataFrames")
+            Pkg.add("DataFramesMeta")
+            println("\nThe Julia system has been updated")
+        end
+    catch err
+        println("\nProblems loading library modules, program execution will now be interrupted\nError: $err (exit code 500)")
+        ccall(:jl_exit, Cvoid, (Int32,), 500)
+    end
+
+    if restartIsRequestCauseUpgrade > 1
         println("\nThe Julia packeges and extra packeges has been updateds, the program ends and a re-execution is requested (exit code 100)")
         ccall(:jl_exit, Cvoid, (Int32,), 100)
-    else
-        println("\nThe Julia system has been updated")
     end
+
 end
 
 @everywhere using SharedArrays
@@ -663,6 +680,9 @@ function parseCommandline()
             help = "Longitude in deg of central point"
             arg_type = Float64
             default = 9.7
+        "--sexagesimal", "-x"
+            help = "Set the sexagesimal unit degree.minutes"
+            action = :store_true
         "--icao", "-i"
             help = "ICAO airport code for extract LAT and LON"
             arg_type = String
@@ -733,6 +753,9 @@ function cmgsExtractTest(cmgs)
 end
 
 
+setDegreeUnit(isSexagesimal,degree) = isSexagesimal ? trunc(degree) + (degree - trunc(degree)) * (10.0/6.0) : degree
+
+
 function main(args)
 
     centralPointLon = nothing
@@ -746,12 +769,14 @@ function main(args)
     end
 
     parsedArgs = parseCommandline()
+
+
+    if parsedArgs["version"] return 0 end
+
+    isSexagesimalUnit = parsedArgs["sexagesimal"]
+
     debugLevel = parsedArgs["debug"]
     if debugLevel > 1 @info "parsedArgs:" parsedArgs end
-
-    if parsedArgs["version"]
-        return 0
-    end
 
     # Path prepare
     pathToTest = normpath(parsedArgs["path"])
@@ -812,8 +837,8 @@ function main(args)
             ccall(:jl_exit, Cvoid, (Int32,), 403)
         end
     else
-        centralPointLat = parsedArgs["lat"]
-        centralPointLon = parsedArgs["lon"]
+        centralPointLat = setDegreeUnit(isSexagesimalUnit,parsedArgs["lat"])
+        centralPointLon = setDegreeUnit(isSexagesimalUnit,parsedArgs["lon"])
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
     end
 
@@ -856,10 +881,10 @@ function main(args)
     # Check if the coordinates are consistent
     systemCoordinatesIsPolar = nothing
     if (parsedArgs["latll"] < parsedArgs["latur"]) && (parsedArgs["lonll"] < parsedArgs["lonur"])
-        latLL = round(parsedArgs["latll"],digits=3)
-        lonLL = round(parsedArgs["lonll"],digits=3)
-        latUR = round(parsedArgs["latur"],digits=3)
-        lonUR = round(parsedArgs["lonur"],digits=3)
+        latLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latll"]),digits=3)
+        lonLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonll"]),digits=3)
+        latUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latur"]),digits=3)
+        lonUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonur"]),digits=3)
         systemCoordinatesIsPolar = false
     end
     if centralPointLat != nothing && centralPointLon != nothing && centralPointRadiusDistance > 0.0 && systemCoordinatesIsPolar == nothing
@@ -916,7 +941,9 @@ function main(args)
             "\nThe images path is: $rootPath\n")
 
         while cmgsExtractTest(cmgs)
+            threadsActive = 0
             Threads.@threads for cmg in cmgsExtract(cmgs,cols)
+                threadsActive += 1
                 theBatchIsNotCompleted = false
                 (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidthByAttemps,cols,overWriteTheTiles,imageMagickPath,debugLevel)
                 if theDDSFileIsOk >= 1
@@ -958,14 +985,14 @@ function main(args)
                     timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
                     println('\r',
                         @sprintf("Time: %5.1f",time()-timeStart),
-                        @sprintf(" elab: %5.1f",timeElaborationForAllTilesInserted),
+                        @sprintf(" elab: %5.0f",timeElaborationForAllTilesInserted),
                         @sprintf(" (%5.1f|",(time()-timeStart) / numbersOfTilesInserted),
                         @sprintf("%5.0f)",timeElaborationForAllTilesResidual),
                         @sprintf(" Tiles: %4d",numbersOfTilesElaborate),
                         @sprintf(" on %4d",numbersOfTilesToElaborate),
                         @sprintf(" res %4d",(numbersOfTilesToElaborate - numbersOfTilesElaborate)),
                         @sprintf(" err %4d",unCompletedTilesNumber),
-                        @sprintf(" Th: %2d",Threads.nthreads()),
+                        @sprintf(" Th: %2d",threadsActive),
                         " path: $pathRel/$tile ",
                         @sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),
                         @sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000),
