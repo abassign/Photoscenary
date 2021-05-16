@@ -53,8 +53,8 @@ end
 
 using Pkg
 
-if VERSION < v"1.5.4"
-    println("The actiual Julia is ",VERSION, " The current version is too old!\nPlease upgrade Julia to version 1.5.4 but preferably install the 1.6.x or later (exit code 500)")
+if VERSION < v"1.5.0"
+    println("The actiual Julia is ",VERSION, " The current version is too old!\nPlease upgrade Julia to version 1.5.0 but preferably install the 1.6.x or later (exit code 500)")
     ccall(:jl_exit, Cvoid, (Int32,), 500)
 elseif VERSION >= v"1.6.0"
     println("The actiual Julia is ",VERSION, " The current version is correct in order to obtain the best performances")
