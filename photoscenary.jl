@@ -128,8 +128,8 @@ begin
         ccall(:jl_exit, Cvoid, (Int32,), 500)
     end
 
-    if restartIsRequestCauseUpgrade > 1
-        println("\nThe Julia packeges and extra packeges has been updateds, the program ends and a re-execution is requested (exit code 100)")
+    if restartIsRequestCauseUpgrade >= 2
+        println("\nThe Julia packeges and extra packeges has been updateds!\n\n\tNote: Sometimes, especially on Windows machines,\n\tafter the restart, there may be print some orrors messages,\n\tnormally there is no problem if you wait a few tens of seconds, if the system seems to stop,\n\tyou can give a CTRL-C and restart the program execution operation again.\n\tThe package management system will solve any problems in the next restart of the program.\n\nNow the program ends and a re-execution is requested (exit code 100)")
         ccall(:jl_exit, Cvoid, (Int32,), 100)
     end
 
