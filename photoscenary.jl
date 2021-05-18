@@ -774,24 +774,6 @@ function main(args)
     debugLevel = parsedArgs["debug"]
     if debugLevel > 1 @info "parsedArgs:" parsedArgs end
 
-    # Path prepare
-    pathToTest = normpath(parsedArgs["path"])
-    if Base.Sys.iswindows()
-        if pathToTest[2] == ':' || pathToTest[1] == '\\'
-            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
-        else
-            cd();
-            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
-        end
-    else
-        if pathToTest[1] == '/'
-            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
-        else
-            cd();
-            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
-        end
-    end
-
     # Process anothers options
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
     unCompletedTilesAttemps = 0
@@ -813,7 +795,7 @@ function main(args)
             end
             if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 1
                 icaoIsFound = 200
-                if centralPointRadiusDistance == nothing centralPointRadiusDistance = 10.0 end
+                if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
                 centralPointLat = foundDatas[1][:latitude_deg]
                 centralPointLon = foundDatas[1][:longitude_deg]
                 println("\nThe ICAO term $(parsedArgs["icao"]) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $centralPointLat lon: $centralPointLon radius: $centralPointRadiusDistance nm")
@@ -836,7 +818,7 @@ function main(args)
                 end
             end
         else
-            println("\nError: The airport.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory (exit code 401)")
+            println("\nError: The airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory (exit code 401)")
             ccall(:jl_exit, Cvoid, (Int32,), 401)
         end
     elseif parsedArgs["tile"] != nothing
@@ -905,6 +887,24 @@ function main(args)
     if systemCoordinatesIsPolar == nothing
         println("\nError: processing will end as the entered coordinates are not consistent")
         ccall(:jl_exit, Cvoid, (Int32,), 505)
+    end
+
+    # Path prepare
+    pathToTest = normpath(parsedArgs["path"])
+    if Base.Sys.iswindows()
+        if pathToTest[2] == ':' || pathToTest[1] == '\\'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
+    else
+        if pathToTest[1] == '/'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
     end
 
     # Download thread
