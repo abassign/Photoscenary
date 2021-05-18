@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.2.3"
-versionProgramDate = "Testing 20210515"
+versionProgram = "0.2.4"
+versionProgramDate = "Testing 20210518"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -78,6 +78,7 @@ begin
 
     try
         using ImageView
+        using JuliaDB
     catch
         restartIsRequestCauseUpgrade = 2
     end
@@ -94,9 +95,6 @@ begin
         using FileIO
         using Images
         using ImageIO
-        using Libz
-        using CSV
-        using CSVFiles
         using DataFrames
         using DataFramesMeta
     catch
@@ -106,6 +104,7 @@ begin
     try
         if restartIsRequestCauseUpgrade >= 2
             Pkg.add("ImageView") # If this is execute is necessary to restart Julia
+            Pkg.add("JuliaDB")
         end
         if restartIsRequestCauseUpgrade >= 1
             println("\nInstal the packeges necessary for photoscenary.jl execution")
@@ -120,9 +119,6 @@ begin
             Pkg.add("FileIO")
             Pkg.add("Images")
             Pkg.add("ImageIO")
-            Pkg.add("Libz")
-            Pkg.add("CSV")
-            Pkg.add("CSVFiles")
             Pkg.add("DataFrames")
             Pkg.add("DataFramesMeta")
             println("\nThe Julia system has been updated")
@@ -132,8 +128,8 @@ begin
         ccall(:jl_exit, Cvoid, (Int32,), 500)
     end
 
-    if restartIsRequestCauseUpgrade > 1
-        println("\nThe Julia packeges and extra packeges has been updateds, the program ends and a re-execution is requested (exit code 100)")
+    if restartIsRequestCauseUpgrade >= 2
+        println("\nThe Julia packeges and extra packeges has been updateds!\n\n\tNote: Sometimes, especially on Windows machines,\n\tafter the restart, there may be print some orrors messages,\n\tnormally there is no problem if you wait a few tens of seconds, if the system seems to stop,\n\tyou can give a CTRL-C and restart the program execution operation again.\n\tThe package management system will solve any problems in the next restart of the program.\n\nNow the program ends and a re-execution is requested (exit code 100)")
         ccall(:jl_exit, Cvoid, (Int32,), 100)
     end
 
@@ -507,7 +503,7 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
                 # Es: imageMatrix[1 + h * (y - 1):h * y,1 + w * (x - 1):w * x] = img
                 try
                     ## imageMatrix[1 + sizeHight - (szHight * y):sizeHight - szHight * (y - 1),1 + szWidth * (x - 1):szWidth * x] = load(Stream(format"PNG", io))
-                    imageMatrix = load(Stream(format"PNG", io))
+                    imageMatrix = Images.load(Stream(format"PNG", io))
                     if debugLevel > 0 println(" ") end
                     # Print actual status
                     print("\rThe image in ",@sprintf("%03.3f,%03.3f,%03.3f,%03.3f",loLL,laLL,loUR,laUR)," load in the matrix: x = $x y = $y Task: $task th: $(Threads.threadid()) try: $tryDownloadFileImagePNG",@sprintf(" time: %3.2f",(time()-t0)))
@@ -778,62 +774,59 @@ function main(args)
     debugLevel = parsedArgs["debug"]
     if debugLevel > 1 @info "parsedArgs:" parsedArgs end
 
-    # Path prepare
-    pathToTest = normpath(parsedArgs["path"])
-    if Base.Sys.iswindows()
-        if pathToTest[2] == ':' || pathToTest[1] == '\\'
-            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
-        else
-            cd();
-            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
-        end
-    else
-        if pathToTest[1] == '/'
-            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
-        else
-            cd();
-            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
-        end
-    end
-
     # Process anothers options
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
     unCompletedTilesAttemps = 0
     centralPointRadiusDistance = parsedArgs["radius"]
 
-    if parsedArgs["tile"] != nothing
-        centralPointLon = coordFromIndex(parsedArgs["tile"])[1]
-        centralPointLat = coordFromIndex(parsedArgs["tile"])[2]
-    elseif parsedArgs["icao"] != nothing
-        try
-            df = CSV.File(fileWithRootHomePath("airports.csv"); normalizenames=true, delim=" ", select=["LAT","LON","ICAO","NAME"], decimal='.')
-            icaoToFind = uppercase(parsedArgs["icao"])
+    if parsedArgs["icao"] != nothing
+        if isfile("airports.csv")
             icaoIsFound = 400
-            raw = 0
-            for r in df
-                raw += 1
-                try
-                    if cmp(uppercase(r[3]),icaoToFind) == 0 || occursin(icaoToFind,uppercase(r[4]))
-                        if centralPointRadiusDistance == nothing centralPointRadiusDistance = 10.0 end
-                        centralPointLat = r[1]
-                        centralPointLon = r[2]
-                        icaoToFind = r[3] * " (" * r[4] * ")"
-                        icaoIsFound = 200
-                        if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
-                        break
-                    end
-                catch
+            println("\nThe airports database 'airports.csv' is loading")
+            db = loadtable("airports.csv")
+            searchString = uppercase(parsedArgs["icao"])
+            # Frist step try with ICAO ident
+            foundDatas = filter(i -> (i.ident == searchString),db)
+            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
+                foundDatas = filter(i -> occursin(searchString,uppercase(i.name)),db)
+            end
+            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
+                foundDatas = filter(i -> occursin(searchString,uppercase(i.municipality)),db)
+            end
+            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 1
+                icaoIsFound = 200
+                if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
+                centralPointLat = foundDatas[1][:latitude_deg]
+                centralPointLon = foundDatas[1][:longitude_deg]
+                println("\nThe ICAO term $(parsedArgs["icao"]) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $centralPointLat lon: $centralPointLon radius: $centralPointRadiusDistance nm")
+            else
+                if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] > 1
                     icaoIsFound = 401
+                    println("\nError: The ICAO search term $(parsedArgs["icao"]) is ambiguous, there are $(JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1]) airports with a similar term (exit code 402)")
+                    cycle = 0
+                    for data in foundDatas
+                        println("\tId: $(data[:ident])\tname: $(data[:name]) ($(data[:municipality]))")
+                        cycle += 1
+                        if cycle > 30 break end
+                    end
+                    println("\n(exit code 402)")
+                    ccall(:jl_exit, Cvoid, (Int32,), 402)
+                else
+                    icaoIsFound = 400
+                    println("\nError: The ICAO search term $(parsedArgs["icao"]) is not found in the airports.csv database (exit code 400)")
+                    ccall(:jl_exit, Cvoid, (Int32,), 400)
                 end
             end
-            if icaoIsFound == 200
-                println("\nThe ICAO ref $icaoToFind is found in the database, central point lat: $centralPointLat lon: $centralPointLon radius: $centralPointRadiusDistance")
-            else
-                println("\nError: processing will stop! The ICAO ref $icaoToFind is not found in the database (exit code $icaoIsFound|$raw)")
-                ccall(:jl_exit, Cvoid, (Int32,), icaoIsFound)
-            end
-        catch
-            println("\nError: processing will stop! The ICAO database airports.csv is not found (exit code 403)")
+        else
+            println("\nError: The airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory (exit code 401)")
+            ccall(:jl_exit, Cvoid, (Int32,), 401)
+        end
+    elseif parsedArgs["tile"] != nothing
+        if parsedArgs["tile"] > 20
+            centralPointLon = coordFromIndex(parsedArgs["tile"])[1]
+            centralPointLat = coordFromIndex(parsedArgs["tile"])[2]
+        else
+            println("\nError: the value of the tile id $(parsedArgs["tile"]) is too small,\n\tit could be a value related to the thread number of the julia compiler\n\tcheck the command line. (exit code 403)")
             ccall(:jl_exit, Cvoid, (Int32,), 403)
         end
     else
@@ -843,8 +836,8 @@ function main(args)
     end
 
     if centralPointLat == nothing || centralPointLon == nothing
-        println("\nError: processing will stop! The LAT or LON is invalid (exit code 402)")
-        ccall(:jl_exit, Cvoid, (Int32,), 402)
+        println("\nError: processing will stop! The LAT or LON is invalid (exit code 404)")
+        ccall(:jl_exit, Cvoid, (Int32,), 404)
     end
 
     overWriteTheTiles = parsedArgs["over"]
@@ -894,6 +887,24 @@ function main(args)
     if systemCoordinatesIsPolar == nothing
         println("\nError: processing will end as the entered coordinates are not consistent")
         ccall(:jl_exit, Cvoid, (Int32,), 505)
+    end
+
+    # Path prepare
+    pathToTest = normpath(parsedArgs["path"])
+    if Base.Sys.iswindows()
+        if pathToTest[2] == ':' || pathToTest[1] == '\\'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
+    else
+        if pathToTest[1] == '/'
+            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+        else
+            cd();
+            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+        end
     end
 
     # Download thread
