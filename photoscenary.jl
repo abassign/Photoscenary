@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.2.4"
-versionProgramDate = "Testing 20210518"
+versionProgram = "0.2.5"
+versionProgramDate = "Testing 20210520"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -85,6 +85,8 @@ begin
 
     try
         import ImageMagick
+        using Dates
+        using Unicode
         using Downloads
         using Logging
         using Distributed
@@ -108,6 +110,8 @@ begin
         end
         if restartIsRequestCauseUpgrade >= 1
             println("\nInstal the packeges necessary for photoscenary.jl execution")
+            Pkg.add("Dates")
+            Pkg.add("Unicode")
             Pkg.add("Downloads")
             Pkg.add("Logging")
             Pkg.add("Distributed")
@@ -780,18 +784,27 @@ function main(args)
     centralPointRadiusDistance = parsedArgs["radius"]
 
     if parsedArgs["icao"] != nothing
-        if isfile("airports.csv")
+        # Select lat lon by ICAO airport id or name or municipality
+        # Test the DB csv or jdb
+        if stat("airports.csv").mtime > stat("airports.jdb").mtime
+            println("\nThe airports database 'airports.csv' is loading for conversion in airports.jdb file")
+            JuliaDB.save(JuliaDB.loadtable("airports.csv"),"airports.jdb")
+        elseif stat("airports.jdb").mtime == 0.0
+            println("\nError: The airports.jdb file and airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory (exit code 403)")
+            ccall(:jl_exit, Cvoid, (Int32,), 403)
+        end
+        try
+            db = JuliaDB.load("airports.jdb")
             icaoIsFound = 400
             println("\nThe airports database 'airports.csv' is loading")
-            db = loadtable("airports.csv")
-            searchString = uppercase(parsedArgs["icao"])
+            searchString = Unicode.normalize(uppercase(parsedArgs["icao"]),stripmark=true)
             # Frist step try with ICAO ident
             foundDatas = filter(i -> (i.ident == searchString),db)
             if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                foundDatas = filter(i -> occursin(searchString,uppercase(i.name)),db)
+                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.municipality),stripmark=true)),db)
             end
             if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                foundDatas = filter(i -> occursin(searchString,uppercase(i.municipality)),db)
+                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.name),stripmark=true)),db)
             end
             if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 1
                 icaoIsFound = 200
@@ -817,9 +830,9 @@ function main(args)
                     ccall(:jl_exit, Cvoid, (Int32,), 400)
                 end
             end
-        else
-            println("\nError: The airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory (exit code 401)")
-            ccall(:jl_exit, Cvoid, (Int32,), 401)
+        catch err
+            println("\nError: The airports.jdb file is corrupt\n\tPlease, make sure if airports.csv file is present in the program directory\n\tRemove the corrupt airports.jdb file and restart the program\nError code is $err (exit code 404)")
+            ccall(:jl_exit, Cvoid, (Int32,), 404)
         end
     elseif parsedArgs["tile"] != nothing
         if parsedArgs["tile"] > 20
@@ -836,8 +849,8 @@ function main(args)
     end
 
     if centralPointLat == nothing || centralPointLon == nothing
-        println("\nError: processing will stop! The LAT or LON is invalid (exit code 404)")
-        ccall(:jl_exit, Cvoid, (Int32,), 404)
+        println("\nError: processing will stop! The LAT or LON is invalid (exit code 405)")
+        ccall(:jl_exit, Cvoid, (Int32,), 405)
     end
 
     overWriteTheTiles = parsedArgs["over"]
