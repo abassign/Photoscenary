@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.2.5"
-versionProgramDate = "Testing 20210520"
+versionProgram = "0.2.6"
+versionProgramDate = "Testing 20210522"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -494,12 +494,12 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
     tryDownloadFileImagePNG = 1
     downloadPNGIsComplete = 0
     t0 = time()
-    while tryDownloadFileImagePNG <= 3 && downloadPNGIsComplete == 0
+    while tryDownloadFileImagePNG <= 1 && downloadPNGIsComplete == 0
         io = IOBuffer(UInt8[], read=true, write=true)
         try
             r = HTTP.request("GET",servicesWebUrl,response_stream = io)
             if r == nothing || (r != nothing && r.status != 200)
-                if debugLevel > 1 @warn "Error: downloadImage - HTTP image download code: " * r.status * " residual try: $tryDownloadFileImagePNG" end
+                if debugLevel > 1 @warn "Error: downloadImage #1 - HTTP image download code: " * r.status * " residual try: $tryDownloadFileImagePNG" end
                 tryDownloadFileImagePNG += 1
             else
                 # In Julia there is a copy function between matrices which foresees to define the coordinates of the starting point.
@@ -513,16 +513,17 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
                     print("\rThe image in ",@sprintf("%03.3f,%03.3f,%03.3f,%03.3f",loLL,laLL,loUR,laUR)," load in the matrix: x = $x y = $y Task: $task th: $(Threads.threadid()) try: $tryDownloadFileImagePNG",@sprintf(" time: %3.2f",(time()-t0)))
                     downloadPNGIsComplete = 1
                 catch err
-                    if debugLevel > 1 @warn "Error: downloadImage - load image $imageWithPathTypePNG is not downloaded, error id: $err" end
+                    if debugLevel > 1 @warn "Error: downloadImage #2 - load image $imageWithPathTypePNG is not downloaded, error id: $err" end
                 end
             end
         catch err
-            if debugLevel > 1 @warn "Error: downloadImage - load image $imageWithPathTypePNG generic error id: $err" end
+            # Typical error type 500
+            if debugLevel > 1 @warn "Error: downloadImage #3 - load image $imageWithPathTypePNG generic error id: $err" end
             tryDownloadFileImagePNG += 1
         end
         close(io)
     end
-    return downloadPNGIsComplete,(time()-t0) / tryDownloadFileImagePNG,xy,imageMatrix
+    return downloadPNGIsComplete,time()-t0,xy,imageMatrix
 end
 
 
@@ -612,7 +613,7 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
             #servicesWebUrl = "http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox="
             #servicesWebUrl = servicesWebUrl * @sprintf("%03.6f,%03.6f,%03.6f,%03.6f",tp[3],tp[5],tp[4],tp[6]) * "&bboxSR=4326&size=$sizeWidth,$sizeHight&imageSR=4326&format=png24&f=image"
             isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],cols,sizeWidth,imageWithPathTypePNG,debugLevel) > 0
-            if isfileImagePNG == true && filesize(imageWithPathTypePNG) > 1024
+            if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
                 # Conversion from .png to .dds
                 try
                     # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
@@ -640,10 +641,14 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
                         if debugLevel > 1 println("createDDSFile - Error to remove the $imageWithPathTypePNG file") end
                     end
                     theBatchIsNotCompleted = true
+                    if theDDSFileIsOk == 0 theDDSFileIsOk = -10 end
                 end
             else
                 theBatchIsNotCompleted = true
+                if theDDSFileIsOk == 0 theDDSFileIsOk = -11 end
             end
+        else
+            if theDDSFileIsOk == 0 theDDSFileIsOk = -12 end
         end
     end
     return theBatchIsNotCompleted, tileIndex, theDDSFileIsOk, timeElaboration, string(tp[7]) * ".dds","../" * tp[1] * "/" * tp[2], fileSizePNG, fileSizeDDS
@@ -727,8 +732,8 @@ end
 function cmgsExtract(cmgs,cols)
     a = []
     colsStop = Threads.nthreads() - cols
+    if colsStop > Sys.CPU_THREADS colsStop = Sys.CPU_THREADS end
     if colsStop <= 0 colsStop = 1 end
-    ##colsStop = Threads.nthreads()
     for cmg in cmgs
         if cmg[2] == 0
             push!(a,cmg[1])
@@ -811,7 +816,7 @@ function main(args)
                 if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
                 centralPointLat = foundDatas[1][:latitude_deg]
                 centralPointLon = foundDatas[1][:longitude_deg]
-                println("\nThe ICAO term $(parsedArgs["icao"]) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $centralPointLat lon: $centralPointLon radius: $centralPointRadiusDistance nm")
+                println("\nThe ICAO term $(parsedArgs["icao"]) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $(round(centralPointLat,digits=4)) lon: $(round(centralPointLon,digits=4)) radius: $centralPointRadiusDistance nm")
             else
                 if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] > 1
                     icaoIsFound = 401
@@ -998,18 +1003,20 @@ function main(args)
                     elseif theDDSFileIsOk == 2
                         totalBytePNG += fileSizePNG
                         totalByteDDS += fileSizeDDS
-                        theDDSFileIsOkStatus = "(Updated) "
+                        theDDSFileIsOkStatus = "(Updated)   "
                     elseif theDDSFileIsOk == -1
-                        theDDSFileIsOkStatus = "(Removed) "
+                        theDDSFileIsOkStatus = "(Removed)   "
                     elseif theDDSFileIsOk == -2
-                        theDDSFileIsOkStatus = "(Nothing) "
+                        theDDSFileIsOkStatus = "(Nothing)   "
                     elseif theDDSFileIsOk == -3
-                        theDDSFileIsOkStatus = "(Skip) "
+                        theDDSFileIsOkStatus = "(Skip)      "
+                    elseif theDDSFileIsOk <= -10
+                        theDDSFileIsOkStatus = "(HTTP! $theDDSFileIsOk) "
                     end
                     timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
                     println('\r',
-                        @sprintf("Time: %5.1f",time()-timeStart),
-                        @sprintf(" elab: %5.0f",timeElaborationForAllTilesInserted),
+                        @sprintf("Time: %6d",time()-timeStart),
+                        @sprintf(" elab: %6d",timeElaborationForAllTilesInserted),
                         @sprintf(" (%5.1f|",(time()-timeStart) / numbersOfTilesInserted),
                         @sprintf("%5.0f)",timeElaborationForAllTilesResidual),
                         @sprintf(" Tiles: %4d",numbersOfTilesElaborate),
