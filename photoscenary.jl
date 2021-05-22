@@ -342,21 +342,10 @@ end
 function coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,whiteTileIndexListDict,isDebug)
     numberOfTiles = 0
     # Normalization to 0.125 deg
-
-    #Test: a = [(index(lat,lon),lat,lon) for lat in 63:0.125:64 for lon in -23:tileWidth(la):-22]
-
-    #=
-    latLL = latLL - mod(latLL,0.125)
-    lonLL = lonLL - mod(lonLL,0.250)
-    latUR = latUR - mod(latUR,0.125) + 0.125
-    lonUR = lonUR - mod(lonUR,0.250) + 0.250
-    =#
-
     latLL = latLL - mod(latLL,0.125)
     latUR = latUR - mod(latUR,0.125) + 0.125
     lonLL = lonLL - mod(lonLL,tileWidth(latLL))
     lonUR = lonUR - mod(lonUR,tileWidth(latLL)) + tileWidth(latLL)
-
     a = [(
             string(lon >= 0.0 ? "e" : "w", lon >= 0.0 ? @sprintf("%03d",floor(abs(lon),digits=-1)) : @sprintf("%03d",ceil(abs(lon),digits=-1)),
                 lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(abs(lat),digits=-1)) : @sprintf("%02d",ceil(abs(lat),digits=-1))),
@@ -477,7 +466,6 @@ function imageQuality(image, debugLevel)
 end
 
 
-## function downloadImage(x,y,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageMatrix,imageWithPathTypePNG,debugLevel)
 function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageWithPathTypePNG,task,debugLevel)
     # /World_Imagery/MapServer/export?bbox=16.0,38.0,16.125,38.0625&bboxSR=4326&size=4096,2048&imageSR=4326&format=png24&f=image
     x = xy[1]
@@ -715,7 +703,7 @@ function parseCommandline()
         "--attemps"
             help = "Number of download attempts"
             arg_type = Int64
-            default = 2
+            default = 3
         "--debug", "-d"
             help = "Debug level"
             arg_type = Int64
@@ -740,7 +728,6 @@ function cmgsExtract(cmgs,cols)
             cmg[2] += 1
         end
         if size(a)[1] >= colsStop
-            ##println("cmgsExtract a: ",a)
             break
         end
     end
@@ -756,6 +743,9 @@ function cmgsExtractTest(cmgs)
     end
     return false
 end
+
+
+inValue(value,extrem) = abs(value) <= extrem
 
 
 setDegreeUnit(isSexagesimal,degree) = isSexagesimal ? trunc(degree) + (degree - trunc(degree)) * (10.0/6.0) : degree
@@ -816,6 +806,12 @@ function main(args)
                 if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
                 centralPointLat = foundDatas[1][:latitude_deg]
                 centralPointLon = foundDatas[1][:longitude_deg]
+
+                # Some airports have the location data multiplied by a thousand, in this case we proceed to the reduction
+                if !(inValue(centralPointLat,90) && inValue(centralPointLon,180))
+                    if abs(centralPointLat) > 1000.0 centralPointLat /= 1000.0 end
+                    if abs(centralPointLon) > 1000.0 centralPointLon /= 1000.0 end
+                end
                 println("\nThe ICAO term $(parsedArgs["icao"]) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $(round(centralPointLat,digits=4)) lon: $(round(centralPointLon,digits=4)) radius: $centralPointRadiusDistance nm")
             else
                 if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] > 1
@@ -903,7 +899,13 @@ function main(args)
         systemCoordinatesIsPolar = true
     end
     if systemCoordinatesIsPolar == nothing
-        println("\nError: processing will end as the entered coordinates are not consistent")
+        println("\nError: The process will terminate as the entered coordinates are not consistent")
+        ccall(:jl_exit, Cvoid, (Int32,), 505)
+    end
+
+    # Check the coordinates
+    if !(inValue(latLL,90) && inValue(lonLL,180) && inValue(latUR,90) && inValue(lonUR,180))
+        println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlatLL: $latLL lonLL: $lonLL latUR: $latUR lonUR: $lonUR")
         ccall(:jl_exit, Cvoid, (Int32,), 505)
     end
 
@@ -1043,12 +1045,15 @@ function main(args)
                 unCompletedTilesAttemps += 1
             end
             isIncompleteTileList = true
-            println("Tile id: ",idTile," attemps: ",unCompletedTiles[idTile])
-            if unCompletedTiles[idTile] <= unCompletedTilesMaxAttemps
+            println("Tile id: ",idTile," attemps: ",unCompletedTilesAttemps)
+            if unCompletedTilesAttemps <= unCompletedTilesMaxAttemps
                 continueToReatray = true
                 numbersOfTilesElaborate = 0
+            else
+                continueToReatray = false
             end
         end
+        if !ifFristCycle && !continueToReatray println("\nThe maximum number of attempts has been reached, some tiles have not been inserted as they cannot be reached") end
         ifFristCycle = false
     end
     println("\n\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate," time for tile: ",@sprintf("%5.1f",(time()-timeStart)/numbersOfTilesToElaborate),@sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),@sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000))
