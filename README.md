@@ -4,7 +4,7 @@ Programs to generate and manipulate photoscenaries for FGFS
 The program is written entirely in JULIA and therefore requires JULIA to be installed on your system.
 The program, for example, you can run it with this command:
 
-julia -t 10 photoscenary.jl --lat 45.66 --lon 9.7 -r 15 -s 3
+julia -t 4 photoscenary.jl --lat 45.66 --lon 9.7 -r 15 -s 3
 
 where:
 
