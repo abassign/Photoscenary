@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+
+<PropertyList>
+  <route>
+    <wp>
+      <type type="string">runway</type>
+      <departure type="bool">true</departure>
+      <ident type="string">08</ident>
+      <icao type="string">LOWI</icao>
+    </wp>
+    <wp n="1">
+      <type type="string">navaid</type>
+      <ident type="string">LIPB</ident>
+      <lon type="double">11.32718365</lon>
+      <lat type="double">46.46333697</lat>
+    </wp>
+    <wp n="2">
+      <type type="string">navaid</type>
+      <ident type="string">VIC</ident>
+      <lon type="double">11.674722</lon>
+      <lat type="double">45.636944</lat>
+    </wp>
+    <wp n="3">
+      <type type="string">navaid</type>
+      <ident type="string">VOG</ident>
+      <lon type="double">8.972222</lon>
+      <lat type="double">44.963889</lat>
+    </wp>
+    <wp n="4">
+      <type type="string">navaid</type>
+      <ident type="string">LIMC</ident>
+      <lon type="double">8.725533344</lon>
+      <lat type="double">45.62739903</lat>
+    </wp>
+    <wp n="5">
+      <type type="string">runway</type>
+      <approach type="bool">true</approach>
+      <ident type="string">30</ident>
+      <icao type="string">LIME</icao>
+    </wp>
+  </route>
+</PropertyList>
