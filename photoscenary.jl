@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.2.6"
-versionProgramDate = "Testing 20210522"
+versionProgram = "0.2.7"
+versionProgramDate = "Testing 20210523"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -99,6 +99,7 @@ begin
         using ImageIO
         using DataFrames
         using DataFramesMeta
+        using Geodesy
     catch
         if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
     end
@@ -125,6 +126,7 @@ begin
             Pkg.add("ImageIO")
             Pkg.add("DataFrames")
             Pkg.add("DataFramesMeta")
+            Pkg.add("Geodesy")
             println("\nThe Julia system has been updated")
         end
     catch err
@@ -265,6 +267,100 @@ function inizialize()
 end
 
 
+function findFile(fileName)
+    filesPath = Any[]
+    id = 0
+    for (root, dirs, files) in walkdir(homedir())
+        for file in files
+            if file == fileName
+                id += 1
+                push!(filesPath,(id,joinpath(root, file),stat(joinpath(root, file)).mtime))
+            end
+        end
+    end
+    return filesPath
+end
+
+
+function findFileOfRoute(fileName)
+    date = 0.0
+    fileId = 0
+    route = nothing
+    files = findFile(fileName)
+    for file in files
+        if file[3] > date
+            # Test the file
+            try
+                route = get_elements_by_tagname(root(parse_file(file[2])),"route")
+                fileId = file[1]
+                date = file[3]
+            catch
+            end
+        end
+    end
+    if fileId > 0
+        return route,files[fileId][2]
+    else
+        return nothing
+    end
+end
+
+
+function loadRoute(fileOfRoute,centralPointRadiusDistance)
+    routeList = Any[]
+    route = findFileOfRoute(fileOfRoute)
+    if route != nothing
+        wps = get_elements_by_tagname(route[1][1], "wp")
+        centralPointRadiusDistanceFactor = 1.5
+        centralPointLatPrec = nothing
+        centralPointLonPrec = nothing
+        for wp in wps
+            foundData = false
+            if wp != nothing
+                if find_element(wp,"icao") != nothing
+                    icao = strip(content(find_element(wp,"icao")))
+                    (centralPointLat, centralPointLon, errorCode) = selectIcao(icao,centralPointRadiusDistance)
+                    if errorCode == 0 foundData = true end
+                elseif find_element(wp,"lon") != nothing
+                    centralPointLat = Base.parse(Float64, strip(content(find_element(wp,"lat"))))
+                    centralPointLon = Base.parse(Float64, strip(content(find_element(wp,"lon"))))
+                    foundData = true
+                end
+                if foundData
+                    # Get the distance
+                    if centralPointLatPrec != nothing && centralPointLonPrec != nothing
+                        posPrec = LLA(centralPointLatPrec,centralPointLonPrec, 0.0)
+                        pos = LLA(centralPointLat,centralPointLon, 0.0)
+                        distanceNm = euclidean_distance(pos,posPrec) / 1852.0
+                    else
+                        distanceNm = 0.0
+                    end
+                    minDistance = centralPointRadiusDistance * centralPointRadiusDistanceFactor
+                    if minDistance < distanceNm
+                        numberTrunk = Int32(round(distanceNm / minDistance))
+                        for i in 1:(numberTrunk - 1)
+                            degLat = centralPointLatPrec + i * (centralPointLat - centralPointLatPrec) / numberTrunk
+                            deglon = centralPointLonPrec + i * (centralPointLon - centralPointLonPrec) / numberTrunk
+                            dist = euclidean_distance(LLA(degLat,deglon, 0.0),posPrec) / 1852.0
+                            push!(routeList,(degLat, deglon, dist))
+                            println("Load Route step $(size(routeList)[1]).$i coordinates lat: $(round(routeList[end][1],digits=4)) lon: $(round(routeList[end][2],digits=4)) distance: $(round(dist,digits=1))")
+                        end
+                    end
+                    push!(routeList,(centralPointLat, centralPointLon, distanceNm))
+                    println("Load Route step $(size(routeList)[1]).0 coordinates lat: $(round(routeList[end][1],digits=4)) lon: $(round(routeList[end][2],digits=4)) distance: $(round(distanceNm,digits=1))")
+                    centralPointLatPrec = centralPointLat
+                    centralPointLonPrec = centralPointLon
+                end
+            end
+        end
+    else
+        println("\nError: loadRoute in the route file: $fileOfRoute")
+    end
+    #ccall(:jl_exit, Cvoid, (Int32,), 405)
+    return routeList, size(routeList)[1]
+end
+
+
 #Testing image magick
 function checkImageMagick(imageMagickPath)
     imageMagickTest = nothing
@@ -334,6 +430,66 @@ function checkImageMagick(imageMagickPath)
         println("was not found, check if the path was written correctly or 'imageMagick' is installed on your system.")
         return false,imageMagickPath
     end
+end
+
+
+# Select lat lon by ICAO airport id or name or municipality
+function selectIcao(icaoToSelect, centralPointRadiusDistance)
+    centralPointLat = nothing
+    centralPointLon = nothing
+    errorCode = 0
+    # Test the DB csv or jdb
+    if stat("airports.csv").mtime > stat("airports.jdb").mtime
+        println("\nThe airports database 'airports.csv' is loading for conversion in airports.jdb file")
+        JuliaDB.save(JuliaDB.loadtable("airports.csv"),"airports.jdb")
+    elseif stat("airports.jdb").mtime == 0.0
+        println("\nError: The airports.jdb file and airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory")
+        errorCode = 403
+    end
+    if errorCode == 0
+        try
+            db = JuliaDB.load("airports.jdb")
+            # println("\nThe airports database 'airports.csv' is loading")
+            searchString = Unicode.normalize(uppercase(icaoToSelect),stripmark=true)
+            # Frist step try with ICAO ident
+            foundDatas = filter(i -> (i.ident == searchString),db)
+            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
+                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.municipality),stripmark=true)),db)
+            end
+            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
+                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.name),stripmark=true)),db)
+            end
+            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 1
+                if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
+                centralPointLat = foundDatas[1][:latitude_deg]
+                centralPointLon = foundDatas[1][:longitude_deg]
+                # Some airports have the location data multiplied by a thousand, in this case we proceed to the reduction
+                if !(inValue(centralPointLat,90) && inValue(centralPointLon,180))
+                    if abs(centralPointLat) > 1000.0 centralPointLat /= 1000.0 end
+                    if abs(centralPointLon) > 1000.0 centralPointLon /= 1000.0 end
+                end
+                println("\nThe ICAO term $(icaoToSelect) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $(round(centralPointLat,digits=4)) lon: $(round(centralPointLon,digits=4)) radius: $centralPointRadiusDistance nm")
+            else
+                if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] > 1
+                    errorCode = 401
+                    println("\nError: The ICAO search term $(icaoToSelect) is ambiguous, there are $(JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1]) airports with a similar term")
+                    cycle = 0
+                    for data in foundDatas
+                        println("\tId: $(data[:ident])\tname: $(data[:name]) ($(data[:municipality]))")
+                        cycle += 1
+                        if cycle > 30 break end
+                    end
+                else
+                    errorCode = 400
+                    println("\nError: The ICAO search term $(icaoToSelect) is not found in the airports.csv database")
+                end
+            end
+        catch err
+            println("\nError: The airports.jdb file is corrupt\n\tPlease, make sure if airports.csv file is present in the program directory\n\tRemove the corrupt airports.jdb file and restart the program\nError code is $err")
+            errorCode = 404
+        end
+    end
+    return centralPointLat, centralPointLon, errorCode
 end
 
 
@@ -680,6 +836,10 @@ function parseCommandline()
             help = "ICAO airport code for extract LAT and LON"
             arg_type = String
             default = nothing
+        "--route"
+            help = "Route XML for extract route LAT and LON"
+            arg_type = String
+            default = nothing
         "--tile", "-t"
             help = "Tile index es coordinate reference"
             arg_type = Int64
@@ -755,6 +915,9 @@ function main(args)
 
     centralPointLon = nothing
     centralPointLat = nothing
+    routeList = Any[]
+    routeListStep = 1
+    routeListSize = 0
 
     imageMagickPath = inizialize()
     (imageMagickStatus, imageMagickPath) = checkImageMagick(imageMagickPath)
@@ -781,75 +944,43 @@ function main(args)
     if parsedArgs["icao"] != nothing
         # Select lat lon by ICAO airport id or name or municipality
         # Test the DB csv or jdb
-        if stat("airports.csv").mtime > stat("airports.jdb").mtime
-            println("\nThe airports database 'airports.csv' is loading for conversion in airports.jdb file")
-            JuliaDB.save(JuliaDB.loadtable("airports.csv"),"airports.jdb")
-        elseif stat("airports.jdb").mtime == 0.0
-            println("\nError: The airports.jdb file and airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory (exit code 403)")
-            ccall(:jl_exit, Cvoid, (Int32,), 403)
+        if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
+        (centralPointLat, centralPointLon, errorCode) = selectIcao(parsedArgs["icao"],centralPointRadiusDistance)
+        if errorCode > 0
+            # Error
+            println("Term the program with exit code $errorCode")
+            ccall(:jl_exit, Cvoid, (Int32,), errorCode)
         end
-        try
-            db = JuliaDB.load("airports.jdb")
-            icaoIsFound = 400
-            println("\nThe airports database 'airports.csv' is loading")
-            searchString = Unicode.normalize(uppercase(parsedArgs["icao"]),stripmark=true)
-            # Frist step try with ICAO ident
-            foundDatas = filter(i -> (i.ident == searchString),db)
-            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.municipality),stripmark=true)),db)
-            end
-            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.name),stripmark=true)),db)
-            end
-            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 1
-                icaoIsFound = 200
-                if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
-                centralPointLat = foundDatas[1][:latitude_deg]
-                centralPointLon = foundDatas[1][:longitude_deg]
-
-                # Some airports have the location data multiplied by a thousand, in this case we proceed to the reduction
-                if !(inValue(centralPointLat,90) && inValue(centralPointLon,180))
-                    if abs(centralPointLat) > 1000.0 centralPointLat /= 1000.0 end
-                    if abs(centralPointLon) > 1000.0 centralPointLon /= 1000.0 end
-                end
-                println("\nThe ICAO term $(parsedArgs["icao"]) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $(round(centralPointLat,digits=4)) lon: $(round(centralPointLon,digits=4)) radius: $centralPointRadiusDistance nm")
-            else
-                if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] > 1
-                    icaoIsFound = 401
-                    println("\nError: The ICAO search term $(parsedArgs["icao"]) is ambiguous, there are $(JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1]) airports with a similar term (exit code 402)")
-                    cycle = 0
-                    for data in foundDatas
-                        println("\tId: $(data[:ident])\tname: $(data[:name]) ($(data[:municipality]))")
-                        cycle += 1
-                        if cycle > 30 break end
-                    end
-                    println("\n(exit code 402)")
-                    ccall(:jl_exit, Cvoid, (Int32,), 402)
-                else
-                    icaoIsFound = 400
-                    println("\nError: The ICAO search term $(parsedArgs["icao"]) is not found in the airports.csv database (exit code 400)")
-                    ccall(:jl_exit, Cvoid, (Int32,), 400)
-                end
-            end
-        catch err
-            println("\nError: The airports.jdb file is corrupt\n\tPlease, make sure if airports.csv file is present in the program directory\n\tRemove the corrupt airports.jdb file and restart the program\nError code is $err (exit code 404)")
-            ccall(:jl_exit, Cvoid, (Int32,), 404)
-        end
+        routeList = push!(routeList,(centralPointLat,centralPointLon))
+        routeListSize = 1
     elseif parsedArgs["tile"] != nothing
+        if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         if parsedArgs["tile"] > 20
             centralPointLon = coordFromIndex(parsedArgs["tile"])[1]
             centralPointLat = coordFromIndex(parsedArgs["tile"])[2]
+            routeList = push!(routeList,(centralPointLat,centralPointLon))
+            routeListSize = 1
         else
             println("\nError: the value of the tile id $(parsedArgs["tile"]) is too small,\n\tit could be a value related to the thread number of the julia compiler\n\tcheck the command line. (exit code 403)")
             ccall(:jl_exit, Cvoid, (Int32,), 403)
         end
+    elseif parsedArgs["route"] != nothing
+        if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
+        (routeList,routeListSize) = loadRoute(parsedArgs["route"],centralPointRadiusDistance)
     else
         centralPointLat = setDegreeUnit(isSexagesimalUnit,parsedArgs["lat"])
         centralPointLon = setDegreeUnit(isSexagesimalUnit,parsedArgs["lon"])
+        routeList = push!(routeList,(centralPointLat,centralPointLon))
+        routeListSize = 1
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
     end
 
-    if centralPointLat == nothing || centralPointLon == nothing
+    systemCoordinatesIsPolar = true
+    if (parsedArgs["latll"] < parsedArgs["latur"]) && (parsedArgs["lonll"] < parsedArgs["lonur"])
+        systemCoordinatesIsPolar = false
+    end
+
+    if routeListSize == 0 && systemCoordinatesIsPolar
         println("\nError: processing will stop! The LAT or LON is invalid (exit code 405)")
         ccall(:jl_exit, Cvoid, (Int32,), 405)
     end
@@ -885,30 +1016,6 @@ function main(args)
     unCompletedTilesMaxAttempsBaseSize = Int64(sizeWidth / 2)
     if unCompletedTilesMaxAttempsBaseSize > 1024 unCompletedTilesMaxAttempsBaseSize = 1024 end
 
-    # Check if the coordinates are consistent
-    systemCoordinatesIsPolar = nothing
-    if (parsedArgs["latll"] < parsedArgs["latur"]) && (parsedArgs["lonll"] < parsedArgs["lonur"])
-        latLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latll"]),digits=3)
-        lonLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonll"]),digits=3)
-        latUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latur"]),digits=3)
-        lonUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonur"]),digits=3)
-        systemCoordinatesIsPolar = false
-    end
-    if centralPointLat != nothing && centralPointLon != nothing && centralPointRadiusDistance > 0.0 && systemCoordinatesIsPolar == nothing
-        (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(centralPointLat,centralPointLon,centralPointRadiusDistance)
-        systemCoordinatesIsPolar = true
-    end
-    if systemCoordinatesIsPolar == nothing
-        println("\nError: The process will terminate as the entered coordinates are not consistent")
-        ccall(:jl_exit, Cvoid, (Int32,), 505)
-    end
-
-    # Check the coordinates
-    if !(inValue(latLL,90) && inValue(lonLL,180) && inValue(latUR,90) && inValue(lonUR,180))
-        println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlatLL: $latLL lonLL: $lonLL latUR: $latUR lonUR: $lonUR")
-        ccall(:jl_exit, Cvoid, (Int32,), 505)
-    end
-
     # Path prepare
     pathToTest = normpath(parsedArgs["path"])
     if Base.Sys.iswindows()
@@ -928,135 +1035,160 @@ function main(args)
     end
 
     # Download thread
-    continueToReatray = true
-    unCompletedTilesNumber = 0
-    numbersOfTilesToElaborate = 0
-    numbersOfTilesInserted = 0
-    numbersOfTilesElaborate = 0
     timeElaborationForAllTilesInserted = 0.0
     timeElaborationForAllTilesResidual = 0.0
     timeStart = time()
-    ifFristCycle = true
     totalByteDDS = 0
     totalBytePNG = 0
 
-    while continueToReatray
-        # Generate the coordinate matrix
+    while routeListStep <= routeListSize
 
-        # Resize management with smaller dimensions
-        if ifFristCycle
-            sizeWidthByAttemps = sizeWidth
+        if routeListSize > 1
+            println("\n---------- Route step $routeListStep on $routeListSize ----------")
+        end
+
+        if systemCoordinatesIsPolar
+            (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(routeList[routeListStep][1],routeList[routeListStep][2],centralPointRadiusDistance)
         else
-            if unCompletedTilesAttemps > 0
-                sizeWidthByAttemps = Int64(unCompletedTilesMaxAttempsBaseSize / 2^(unCompletedTilesAttemps - 1))
-            else
+            latLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latll"]),digits=3)
+            lonLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonll"]),digits=3)
+            latUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latur"]),digits=3)
+            lonUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonur"]),digits=3)
+        end
+
+        # Check the coordinates
+        if !(inValue(latLL,90) && inValue(lonLL,180) && inValue(latUR,90) && inValue(lonUR,180))
+            println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlatLL: $latLL lonLL: $lonLL latUR: $latUR lonUR: $lonUR")
+            ccall(:jl_exit, Cvoid, (Int32,), 505)
+        end
+
+        ifFristCycle = true
+        continueToReatray = true
+        unCompletedTilesNumber = 0
+        numbersOfTilesToElaborate = 0
+        numbersOfTilesInserted = 0
+        numbersOfTilesElaborate = 0
+
+        while continueToReatray
+            # Generate the coordinate matrix
+            # Resize management with smaller dimensions
+            if ifFristCycle
                 sizeWidthByAttemps = sizeWidth
-            end
-        end
-
-        if ifFristCycle
-            (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,nothing,debugLevel)
-            numbersOfTilesToElaborate = cmgsSize
-        else
-            (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,unCompletedTiles,debugLevel)
-            numbersOfTilesToElaborate = cmgsSize
-        end
-        println("\nStart the elaboration n. $(unCompletedTilesAttemps+1) for $numbersOfTilesToElaborate tiles the Area deg is",
-            @sprintf(" latLL: %02.3f",latLL),
-            @sprintf(" lonLL: %03.3f",lonLL),
-            @sprintf(" latUR: %02.3f",latUR),
-            @sprintf(" lonUR: %03.3f",lonUR),
-            " Batch size: $cmgsSize",
-            " Width pix: $sizeWidthByAttemps",
-            " Cycle: $unCompletedTilesAttemps",
-            "\nThe images path is: $rootPath\n")
-
-        while cmgsExtractTest(cmgs)
-            threadsActive = 0
-            Threads.@threads for cmg in cmgsExtract(cmgs,cols)
-                threadsActive += 1
-                theBatchIsNotCompleted = false
-                (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidthByAttemps,cols,overWriteTheTiles,imageMagickPath,debugLevel)
-                if theDDSFileIsOk >= 1
-                    numbersOfTilesElaborate += 1
-                    if timeElaboration != nothing && theBatchIsNotCompleted == false
-                        timeElaborationForAllTilesInserted += timeElaboration
-                        numbersOfTilesInserted += 1
-                    end
-                    if haskey(unCompletedTiles,tileIndex)
-                        delete!(unCompletedTiles,tileIndex)
-                        unCompletedTilesNumber -= 1
-                    end
-                elseif theBatchIsNotCompleted
-                    if haskey(unCompletedTiles,tileIndex)
-                        push!(unCompletedTiles,tileIndex => unCompletedTiles[tileIndex] + 1)
-                    else
-                        push!(unCompletedTiles,tileIndex => 1)
-                    end
-                    if ifFristCycle unCompletedTilesNumber += 1 end
-                else
-                    numbersOfTilesElaborate += 1
-                end
-                if theDDSFileIsOk != 0
-                    if theDDSFileIsOk == 1
-                        theDDSFileIsOkStatus = "(Inserted)"
-                        totalBytePNG += fileSizePNG
-                        totalByteDDS += fileSizeDDS
-                    elseif theDDSFileIsOk == 2
-                        totalBytePNG += fileSizePNG
-                        totalByteDDS += fileSizeDDS
-                        theDDSFileIsOkStatus = "(Updated)   "
-                    elseif theDDSFileIsOk == -1
-                        theDDSFileIsOkStatus = "(Removed)   "
-                    elseif theDDSFileIsOk == -2
-                        theDDSFileIsOkStatus = "(Nothing)   "
-                    elseif theDDSFileIsOk == -3
-                        theDDSFileIsOkStatus = "(Skip)      "
-                    elseif theDDSFileIsOk <= -10
-                        theDDSFileIsOkStatus = "(HTTP! $theDDSFileIsOk) "
-                    end
-                    timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
-                    println('\r',
-                        @sprintf("Time: %6d",time()-timeStart),
-                        @sprintf(" elab: %6d",timeElaborationForAllTilesInserted),
-                        @sprintf(" (%5.1f|",(time()-timeStart) / numbersOfTilesInserted),
-                        @sprintf("%5.0f)",timeElaborationForAllTilesResidual),
-                        @sprintf(" Tiles: %4d",numbersOfTilesElaborate),
-                        @sprintf(" on %4d",numbersOfTilesToElaborate),
-                        @sprintf(" res %4d",(numbersOfTilesToElaborate - numbersOfTilesElaborate)),
-                        @sprintf(" err %4d",unCompletedTilesNumber),
-                        @sprintf(" Th: %2d",threadsActive),
-                        " path: $pathRel/$tile ",
-                        @sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),
-                        @sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000),
-                        theDDSFileIsOkStatus
-                    )
-                else
-                    totalBytePNG += fileSizePNG
-                end
-            end
-        end
-        # Check the incomplete Tiles
-        continueToReatray = false
-        isIncompleteTileList = false
-        for idTile in collect(keys(unCompletedTiles))
-            if !isIncompleteTileList
-                println("\nIncomplete tiles list:")
-                unCompletedTilesAttemps += 1
-            end
-            isIncompleteTileList = true
-            println("Tile id: ",idTile," attemps: ",unCompletedTilesAttemps)
-            if unCompletedTilesAttemps <= unCompletedTilesMaxAttemps
-                continueToReatray = true
-                numbersOfTilesElaborate = 0
             else
-                continueToReatray = false
+                if unCompletedTilesAttemps > 0
+                    sizeWidthByAttemps = Int64(unCompletedTilesMaxAttempsBaseSize / 2^(unCompletedTilesAttemps - 1))
+                else
+                    sizeWidthByAttemps = sizeWidth
+                end
             end
+
+            if ifFristCycle
+                (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,nothing,debugLevel)
+                numbersOfTilesToElaborate = cmgsSize
+            else
+                (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,unCompletedTiles,debugLevel)
+                numbersOfTilesToElaborate = cmgsSize
+            end
+            println("\nStart the elaboration n. $(unCompletedTilesAttemps+1) for $numbersOfTilesToElaborate tiles the Area deg is",
+                @sprintf(" latLL: %02.3f",latLL),
+                @sprintf(" lonLL: %03.3f",lonLL),
+                @sprintf(" latUR: %02.3f",latUR),
+                @sprintf(" lonUR: %03.3f",lonUR),
+                " Batch size: $cmgsSize",
+                " Width pix: $sizeWidthByAttemps",
+                " Cycle: $unCompletedTilesAttemps",
+                "\nThe images path is: $rootPath\n")
+
+            while cmgsExtractTest(cmgs)
+                threadsActive = 0
+                Threads.@threads for cmg in cmgsExtract(cmgs,cols)
+                    threadsActive += 1
+                    theBatchIsNotCompleted = false
+                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidthByAttemps,cols,overWriteTheTiles,imageMagickPath,debugLevel)
+                    if theDDSFileIsOk >= 1
+                        numbersOfTilesElaborate += 1
+                        if timeElaboration != nothing && theBatchIsNotCompleted == false
+                            timeElaborationForAllTilesInserted += timeElaboration
+                            numbersOfTilesInserted += 1
+                        end
+                        if haskey(unCompletedTiles,tileIndex)
+                            delete!(unCompletedTiles,tileIndex)
+                            unCompletedTilesNumber -= 1
+                        end
+                    elseif theBatchIsNotCompleted
+                        if haskey(unCompletedTiles,tileIndex)
+                            push!(unCompletedTiles,tileIndex => unCompletedTiles[tileIndex] + 1)
+                        else
+                            push!(unCompletedTiles,tileIndex => 1)
+                        end
+                        if ifFristCycle unCompletedTilesNumber += 1 end
+                    else
+                        numbersOfTilesElaborate += 1
+                    end
+                    if theDDSFileIsOk != 0
+                        if theDDSFileIsOk == 1
+                            theDDSFileIsOkStatus = "(Inserted)"
+                            totalBytePNG += fileSizePNG
+                            totalByteDDS += fileSizeDDS
+                        elseif theDDSFileIsOk == 2
+                            totalBytePNG += fileSizePNG
+                            totalByteDDS += fileSizeDDS
+                            theDDSFileIsOkStatus = "(Updated)   "
+                        elseif theDDSFileIsOk == -1
+                            theDDSFileIsOkStatus = "(Removed)   "
+                        elseif theDDSFileIsOk == -2
+                            theDDSFileIsOkStatus = "(Nothing)   "
+                        elseif theDDSFileIsOk == -3
+                            theDDSFileIsOkStatus = "(Skip)      "
+                        elseif theDDSFileIsOk <= -10
+                            theDDSFileIsOkStatus = "(HTTP! $theDDSFileIsOk) "
+                        end
+                        timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
+                        println('\r',
+                            @sprintf("Time: %6d",time()-timeStart),
+                            @sprintf(" elab: %6d",timeElaborationForAllTilesInserted),
+                            @sprintf(" (%5d|",(time()-timeStart) / numbersOfTilesInserted),
+                            @sprintf("%5d)",timeElaborationForAllTilesResidual),
+                            @sprintf(" Tiles: %4d",numbersOfTilesElaborate),
+                            @sprintf(" on %4d",numbersOfTilesToElaborate),
+                            @sprintf(" res %4d",(numbersOfTilesToElaborate - numbersOfTilesElaborate)),
+                            @sprintf(" err %4d",unCompletedTilesNumber),
+                            @sprintf(" Th: %2d",threadsActive),
+                            " path: $pathRel/$tile ",
+                            @sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),
+                            @sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000),
+                            theDDSFileIsOkStatus
+                        )
+                    else
+                        totalBytePNG += fileSizePNG
+                    end
+                end
+            end
+            # Check the incomplete Tiles
+            continueToReatray = false
+            isIncompleteTileList = false
+            for idTile in collect(keys(unCompletedTiles))
+                if !isIncompleteTileList
+                    println("\nIncomplete tiles list:")
+                    unCompletedTilesAttemps += 1
+                end
+                isIncompleteTileList = true
+                println("Tile id: ",idTile," attemps: ",unCompletedTilesAttemps)
+                if unCompletedTilesAttemps <= unCompletedTilesMaxAttemps
+                    continueToReatray = true
+                    numbersOfTilesElaborate = 0
+                else
+                    continueToReatray = false
+                end
+            end
+            if !ifFristCycle && !continueToReatray println("\nThe maximum number of attempts has been reached, some tiles have not been inserted as they cannot be reached") end
+            ifFristCycle = false
         end
-        if !ifFristCycle && !continueToReatray println("\nThe maximum number of attempts has been reached, some tiles have not been inserted as they cannot be reached") end
-        ifFristCycle = false
+
+        println("\n\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate," time for tile: ",@sprintf("%5.1f",(time()-timeStart)/numbersOfTilesToElaborate),@sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),@sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000))
+
+        routeListStep += 1
     end
-    println("\n\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate," time for tile: ",@sprintf("%5.1f",(time()-timeStart)/numbersOfTilesToElaborate),@sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),@sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000))
 
 end
 
