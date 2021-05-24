@@ -9,4 +9,28 @@
     <imageMagick>
         <path/>
     </imageMagick>
+    <servers>
+        <server>
+            <id>1</id>
+            <name>Arcgis</name>
+            <comment>ESRI GIS: https://www.esri.com/en-us/about/about-esri/overview</comment>
+            <url-base>http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?</url-base>
+            <url-command>bbox={lonLL},{latLL},{lonUR},{latUR}|bboxSR=4326|size={szWidth},{szHight}|imageSR=4326|format=png24|f=image</url-command>
+        </server>
+        <server>
+            <id>2</id>
+            <name>USGS</name>
+            <comment>United States only. Public domain license</comment>
+            <url-base>https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/export?</url-base>
+            <url-command>bbox={lonLL},{latLL},{lonUR},{latUR}|bboxSR=4326|size={szWidth},{szHight}|imageSR=4326|format=png24|f=image</url-command>
+        </server>
+        <server>
+            <id>3</id>
+            <name>PNOA</name>
+            <comment>PNOA only Spain, license CC-BY</comment>
+            <url-base>https://www.ign.es/wms-inspire/pnoa-ma?</url-base>
+            <url-command>SERVICE=WMS|VERSION=1.1.1|REQUEST=GetMap|LAYERS=OI.OrthoimageCoverage|SRS=EPSG:4326|BBOX={lonLL},{latLL},{lonUR},{latUR}|WIDTH={szWidth}|HEIGHT={szHight}|FORMAT=image/png</url-command>
+        </server>
+    </servers>
 </params>
+
