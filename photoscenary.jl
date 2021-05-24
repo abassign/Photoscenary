@@ -143,34 +143,6 @@ end
 
 @everywhere using SharedArrays
 
-# Test set:
-# python3 creator.py --lat 38 --lon 16 --info_only
-# Bucket: {'min_lat': 38.0, 'max_lat': 38.125, 'min_lon': 16.0, 'max_lon': 16.25, 'center_lat': 38.0625, 'center_lon': 16.125}. Index: 3219456
-
-# Lat: 38 cmd=python3 creator.py --lat "38.0000" --lon "16.0000" --info_only
-# Tile 3219456 needs download
-#= Testing (max 4096 x 2048)
-/World_Imagery/MapServer/export?bbox=16.0,38.0,16.125,38.0625&bboxSR=4326&size=4096,2048&imageSR=4326&format=png24&f=image
-/World_Imagery/MapServer/export?bbox=16.125,38.0,16.25,38.0625&bboxSR=4326&size=4096,2048&imageSR=4326&format=png24&f=image
-/World_Imagery/MapServer/export?bbox=16.0,38.0625,16.125,38.125&bboxSR=4326&size=4096,2048&imageSR=4326&format=png24&f=image
-/World_Imagery/MapServer/export?bbox=16.125,38.0625,16.25,38.125&bboxSR=4326&size=4096,2048&imageSR=4326&format=png24&f=image
-INFO:root:Joining tiles to /home/abassign/photoscenery/Orthophotos/e010n30/e016n38/3219456.png
-Bucket: {'min_lat': 38.0, 'max_lat': 38.125, 'min_lon': 16.0, 'max_lon': 16.25, 'center_lat': 38.0625, 'center_lon': 16.125}. Index: 3219456
-cmd=python3 creator.py --lat "38.0000" --lon "16.0500" --info_only
-cmd=python3 creator.py --lat "38.0000" --lon "16.1000" --info_only
-cmd=python3 creator.py --lat "38.0000" --lon "16.1500" --info_only
-cmd=python3 creator.py --lat "38.0000" --lon "16.2000" --info_only
-cmd=python3 creator.py --lat "38.0000" --lon "16.2500" --info_only
-
-Test lat 64 deg N
-
-python3 creator.py --index 2582136
-Bucket: {'min_lat': 63.875, 'max_lat': 64.0, 'min_lon': -23.0, 'max_lon': -22.5, 'center_lat': 63.9375, 'center_lon': -22.75}. Index: 2582136
-INFO:root:Downloading tile=/tmp/tmp3h6qij5v from url=http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox=-23.0,63.875,-22.5,64.0&bboxSR=4326&size=8192,2048&imageSR=4326&format=png24&f=image
-INFO:root:Joining tiles to /home/abassign/Scaricati/flightgear-photoscenery-master/Orthophotos/w030n60/w023n63/2582136.png
-
-=#
-
 m = [90, 89, 86, 83, 76, 62, 22,-22]
 n = [12.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125]
 
@@ -264,6 +236,66 @@ function inizialize()
         ces = get_elements_by_tagname(root(paramsXml),"versioning")
     end
     return imageMagickPath
+end
+
+
+
+struct MapServer
+    id::Int64
+    webUrlBase::Union{String,Nothing}
+    webUrlCommand::Union{String,Nothing}
+    name::Union{String,Nothing}
+    comment::Union{String,Nothing}
+    errorCode::Int64
+
+    function MapServer(id)
+        try
+            serversRoot = get_elements_by_tagname(root(parse_file("params.xml")),"servers")
+            servers = get_elements_by_tagname(serversRoot[1], "server")
+            for server in servers
+                if server!= nothing
+                    if strip(content(find_element(server,"id"))) == string(id)
+                        webUrlBase = strip(content(find_element(server,"url-base")))
+                        webUrlCommand = map(c -> c == '|' ? '&' : c, strip(content(find_element(server,"url-command"))))
+                        name = strip(content(find_element(server,"name")))
+                        comment = strip(content(find_element(server,"comment")))
+                        return new(id,webUrlBase,webUrlCommand,name,comment,0)
+                    end
+                end
+            end
+            return new(id,nothing,nothing,nothing,nothing,410)
+        catch err
+            return new(id,nothing,nothing,nothing,nothing,411)
+        end
+    end
+end
+
+
+function getMapServerReplace(urlCmd,varString,varValue,errorCode)
+    a = replace(urlCmd,varString => string(round(varValue,digits=6)))
+    if a != urlCmd
+        return a, errorCode
+    else
+        println("\nError: getMapServerReplace params.xml has problems in the servers section\n\tthe map server with id $id has the $varString value not correct or defined\n\t$webUrlCommand")
+        return a, errorCode + 1
+    end
+end
+
+
+function getMapServer(m::MapServer,latLL,lonLL,latUR,lonUR,szWidth,szHight)
+    urlCmd = m.webUrlCommand
+    errorCode = m.errorCode
+    if errorCode == 0
+        urlCmd,errorCode = getMapServerReplace(urlCmd,"{latLL}",latLL,0)
+        urlCmd,errorCode = getMapServerReplace(urlCmd,"{lonLL}",lonLL,errorCode)
+        urlCmd,errorCode = getMapServerReplace(urlCmd,"{latUR}",latUR,errorCode)
+        urlCmd,errorCode = getMapServerReplace(urlCmd,"{lonUR}",lonUR,errorCode)
+        urlCmd,errorCode = getMapServerReplace(urlCmd,"{szWidth}",szWidth,errorCode)
+        urlCmd,errorCode = getMapServerReplace(urlCmd,"{szHight}",szHight,errorCode)
+        return m.webUrlBase * urlCmd, errorCode > 0 ? 413 : 0
+    else
+        return "", 412
+    end
 end
 
 
@@ -622,7 +654,7 @@ function imageQuality(image, debugLevel)
 end
 
 
-function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageWithPathTypePNG,task,debugLevel)
+function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageWithPathTypePNG,task,mapServer::MapServer,debugLevel)
     # /World_Imagery/MapServer/export?bbox=16.0,38.0,16.125,38.0625&bboxSR=4326&size=4096,2048&imageSR=4326&format=png24&f=image
     x = xy[1]
     y = xy[2]
@@ -631,13 +663,17 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
     loUR = lonLL + x * ΔLon
     laLL = latLL + (y - 1) * ΔLat
     laUR = latLL + y * ΔLat
-    servicesWebUrlBase = "http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox="
-    servicesWebUrl = servicesWebUrlBase * @sprintf("%03.6f,%03.6f,%03.6f,%03.6f",loLL,laLL,loUR,laUR) * "&bboxSR=4326&size=$szWidth,$szHight&imageSR=4326&format=png24&f=image"
+    t0 = time()
+    downloadPNGIsComplete = 0
+    #servicesWebUrlBase = "http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?"
+    #servicesWebUrl = servicesWebUrlBase * "bbox=$loLL,$laLL,$loUR,$laUR&bboxSR=4326&size=$szWidth,$szHight&imageSR=4326&format=png24&f=image"
+    (servicesWebUrl,errorCode) = getMapServer(mapServer,laLL,loLL,laUR,loUR,szWidth,szHight)
+    if errorCode > 0
+        return downloadPNGIsComplete,time()-t0,xy,imageMatrix
+    end
     # HTTPD options from https://juliaweb.github.io/HTTP.jl/dev/public_interface/
     if debugLevel > 0 @warn "downloadImage - HTTP image start to download url: $servicesWebUrl" end
     tryDownloadFileImagePNG = 1
-    downloadPNGIsComplete = 0
-    t0 = time()
     while tryDownloadFileImagePNG <= 1 && downloadPNGIsComplete == 0
         io = IOBuffer(UInt8[], read=true, write=true)
         try
@@ -671,7 +707,7 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
 end
 
 
-function downloadImages(lonLL,latLL,lonUR,latUR,cols,sizeWidth,imageWithPathTypePNG,debugLevel)
+function downloadImages(lonLL,latLL,lonUR,latUR,cols,sizeWidth,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
     sizeHight = Int(sizeWidth / (8 * tileWidth((latUR + latLL) / 2.0)))
     #imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
     imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
@@ -683,7 +719,7 @@ function downloadImages(lonLL,latLL,lonUR,latUR,cols,sizeWidth,imageWithPathType
     indexValues = [(x,y) for x in 1:cols for y in 1:cols]
     fs = Dict{Int,Any}()
     @sync for task in 1:(cols*cols)
-        @async fs[task] = downloadImage(indexValues[task],lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageWithPathTypePNG,task,debugLevel)
+        @async fs[task] = downloadImage(indexValues[task],lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageWithPathTypePNG,task,mapServer,debugLevel)
     end
     res = Dict{Int,Tuple{Int64, Float64, Tuple{Int64, Int64}, Matrix{RGB{N0f8}}}}()
     @sync for task in 1:(cols*cols)
@@ -713,7 +749,7 @@ function downloadImages(lonLL,latLL,lonUR,latUR,cols,sizeWidth,imageWithPathType
 end
 
 
-function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickPath,debugLevel)
+function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickPath,mapServer::MapServer,debugLevel)
     theBatchIsNotCompleted = false
     t0 = time()
     timeElaboration = nothing
@@ -756,7 +792,7 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
         if createDDSFile
             #servicesWebUrl = "http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox="
             #servicesWebUrl = servicesWebUrl * @sprintf("%03.6f,%03.6f,%03.6f,%03.6f",tp[3],tp[5],tp[4],tp[6]) * "&bboxSR=4326&size=$sizeWidth,$sizeHight&imageSR=4326&format=png24&f=image"
-            isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],cols,sizeWidth,imageWithPathTypePNG,debugLevel) > 0
+            isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],cols,sizeWidth,imageWithPathTypePNG,mapServer,debugLevel) > 0
             if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
                 # Conversion from .png to .dds
                 try
@@ -805,6 +841,10 @@ function parseCommandline()
     s = ArgParseSettings()
 
     @add_arg_table! s begin
+        "--map"
+            help = "The map server id"
+            arg_type = Int64
+            default = 1
         "--latll"
             help = "Lower left area lat"
             arg_type = Float64
@@ -928,8 +968,16 @@ function main(args)
 
     parsedArgs = parseCommandline()
 
-
     if parsedArgs["version"] return 0 end
+
+    mapServer = MapServer(parsedArgs["map"])
+    (serviceWebUrl,errorCode) = getMapServer(mapServer,1,2,3,4,5,6)
+    if errorCode > 0
+        println("\nError: The map server with Id $(parsedArgs["map"]) was not found Check the params.xml file\n\tOr check if you entered the right id in the --map command\n\tTerm the program with exit code $errorCode")
+        ccall(:jl_exit, Cvoid, (Int32,), errorCode)
+    else
+        println("\nMap server select id: $(mapServer.id) name: $(mapServer.comment) ($(mapServer.name))")
+    end
 
     isSexagesimalUnit = parsedArgs["sexagesimal"]
 
@@ -1104,7 +1152,7 @@ function main(args)
                 Threads.@threads for cmg in cmgsExtract(cmgs,cols)
                     threadsActive += 1
                     theBatchIsNotCompleted = false
-                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidthByAttemps,cols,overWriteTheTiles,imageMagickPath,debugLevel)
+                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidthByAttemps,cols,overWriteTheTiles,imageMagickPath,mapServer,debugLevel)
                     if theDDSFileIsOk >= 1
                         numbersOfTilesElaborate += 1
                         if timeElaboration != nothing && theBatchIsNotCompleted == false
