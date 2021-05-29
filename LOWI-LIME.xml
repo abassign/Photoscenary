@@ -1,6 +1,14 @@
 <?xml version="1.0"?>
 
 <PropertyList>
+  <version type="int">2</version>
+  <flight-rules type="string">V</flight-rules>
+  <flight-type type="string">X</flight-type>
+  <estimated-duration-minutes type="int">0</estimated-duration-minutes>
+  <departure>
+    <airport type="string">LOWI</airport>
+    <runway type="string">08</runway>
+  </departure>
   <route>
     <wp>
       <type type="string">runway</type>
@@ -33,10 +41,10 @@
       <lat type="double">45.62739903</lat>
     </wp>
     <wp n="5">
-      <type type="string">runway</type>
-      <approach type="bool">true</approach>
-      <ident type="string">30</ident>
-      <icao type="string">LIME</icao>
+      <type type="string">navaid</type>
+      <ident type="string">LIME</ident>
+      <lon type="double">9.703925827</lon>
+      <lat type="double">45.67341229</lat>
     </wp>
   </route>
 </PropertyList>

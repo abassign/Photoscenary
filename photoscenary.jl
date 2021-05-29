@@ -246,9 +246,10 @@ struct MapServer
     webUrlCommand::Union{String,Nothing}
     name::Union{String,Nothing}
     comment::Union{String,Nothing}
+    proxy::Union{String,Nothing}
     errorCode::Int64
 
-    function MapServer(id)
+    function MapServer(id,aProxy=nothing)
         try
             serversRoot = get_elements_by_tagname(root(parse_file("params.xml")),"servers")
             servers = get_elements_by_tagname(serversRoot[1], "server")
@@ -259,13 +260,14 @@ struct MapServer
                         webUrlCommand = map(c -> c == '|' ? '&' : c, strip(content(find_element(server,"url-command"))))
                         name = strip(content(find_element(server,"name")))
                         comment = strip(content(find_element(server,"comment")))
-                        return new(id,webUrlBase,webUrlCommand,name,comment,0)
+                        proxy = aProxy
+                        return new(id,webUrlBase,webUrlCommand,name,comment,proxy,0)
                     end
                 end
             end
-            return new(id,nothing,nothing,nothing,nothing,410)
+            return new(id,nothing,nothing,nothing,nothing,nothing,410)
         catch err
-            return new(id,nothing,nothing,nothing,nothing,411)
+            return new(id,nothing,nothing,nothing,nothing,nothing,411)
         end
     end
 end
@@ -674,10 +676,10 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
     # HTTPD options from https://juliaweb.github.io/HTTP.jl/dev/public_interface/
     if debugLevel > 0 @warn "downloadImage - HTTP image start to download url: $servicesWebUrl" end
     tryDownloadFileImagePNG = 1
-    while tryDownloadFileImagePNG <= 1 && downloadPNGIsComplete == 0
+    while tryDownloadFileImagePNG <= 2 && downloadPNGIsComplete == 0
         io = IOBuffer(UInt8[], read=true, write=true)
         try
-            r = HTTP.request("GET",servicesWebUrl,response_stream = io)
+            r = HTTP.request("GET",servicesWebUrl,response_stream = io,proxy=mapServer.proxy)
             if r == nothing || (r != nothing && r.status != 200)
                 if debugLevel > 1 @warn "Error: downloadImage #1 - HTTP image download code: " * r.status * " residual try: $tryDownloadFileImagePNG" end
                 tryDownloadFileImagePNG += 1
@@ -750,6 +752,7 @@ end
 
 
 function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickPath,mapServer::MapServer,debugLevel)
+
     theBatchIsNotCompleted = false
     t0 = time()
     timeElaboration = nothing
@@ -900,6 +903,10 @@ function parseCommandline()
             help = "Path to store the dds images"
             arg_type = String
             default = "fgfs-scenery/photoscenery"
+        "--proxy"
+            help = "Proxy string ipv4:port for example: \"192.168.0.1:8080\""
+            arg_type = String
+            default = nothing
         "--attemps"
             help = "Number of download attempts"
             arg_type = Int64
@@ -970,7 +977,7 @@ function main(args)
 
     if parsedArgs["version"] return 0 end
 
-    mapServer = MapServer(parsedArgs["map"])
+    mapServer = MapServer(parsedArgs["map"], parsedArgs["proxy"])
     (serviceWebUrl,errorCode) = getMapServer(mapServer,1,2,3,4,5,6)
     if errorCode > 0
         println("\nError: The map server with Id $(parsedArgs["map"]) was not found Check the params.xml file\n\tOr check if you entered the right id in the --map command\n\tTerm the program with exit code $errorCode")
