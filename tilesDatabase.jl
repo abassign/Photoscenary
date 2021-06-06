@@ -25,7 +25,8 @@ struct TailData
     name::String
     modDate::Float64
     size::Int64
-    pixelSize::Int16
+    pixelSizeW::Int16
+    pixelSizeH::Int16
 end
 
 
@@ -77,9 +78,35 @@ function getTailGroupByIndex(db,index::Int64,path::String)
 end
 
 
+function copyTilesByIndex(db,index::Int64,pixelSizeW::Int64,aBasePath::String)
+    # The PathTo not include the file name and the super 2 levels name
+    # For example:
+    # Base path: /home/abassign
+    # index: 1105762
+    # Result is: /home/abassign/w120n30/w113n35/1105762.dds
+    records = getTailGroupByIndex(db,index)
+    if records != nothing
+        for record in records.filesFound
+            if records.filesFound[1].pixelSizeW >= pixelSizeW
+                # Create the effective path
+                cfi = coordFromIndex(index)
+                basePath = normpath(aBasePath * "/" * cfi[7] * "/" * cfi[8] * "/" * string(index) * ".dds")
+                if !ispath(basePath) mkpath(basePath) end
+                cp(records.filesFound[1].path,basePath,force=true)
+                return (index,records.filesFound[1].path,basePath)
+            end
+        end
+        return nothing,nothing,nothing
+    else
+        return nothing,nothing,nothing
+    end
+end
+
+
 function updateFilesListTypeDDS(path::String=homedir())
     filesPath = Dict{Int64,TailGroupByIndex}()
-    id = 0
+    rowsNumber = 0
+    filesSize = 0
     for (root, dirs, files) in walkdir(path)
         for file in files
             fe = getFileExtension(file)
@@ -90,14 +117,18 @@ function updateFilesListTypeDDS(path::String=homedir())
                     fileWithPath = cfi[7] * "/" * cfi[8] * "/" * string(index) * ".dds"
                     jp = joinpath(root, file)
                     if findlast(fileWithPath,jp) != nothing
-                        id += 1
-                        td = TailData(jp,file,stat(jp).mtime,stat(jp).size,0)
-                        if !haskey(filesPath,index) filesPath[index] = TailGroupByIndex() end
-                        tailGroupByIndexInsert(filesPath[index],index,td)
+                        (isDDS,pixelSizeW,pixelSizeH) = getDDSSize(jp)
+                        if isDDS
+                            rowsNumber += 1
+                            td = TailData(jp,file,stat(jp).mtime,stat(jp).size,pixelSizeW,pixelSizeH)
+                            filesSize += stat(jp).size
+                            if !haskey(filesPath,index) filesPath[index] = TailGroupByIndex() end
+                            tailGroupByIndexInsert(filesPath[index],index,td)
+                        end
                     end
                 end
             end
         end
     end
-    return JuliaDB.table(collect(filesPath);pkey=1)
+    return JuliaDB.table(collect(filesPath);pkey=1),rowsNumber,filesSize
 end

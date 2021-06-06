@@ -145,8 +145,9 @@ end
 
 @everywhere using SharedArrays
 
-include("commons.jl")
 
+include("commons.jl")
+include("tilesDatabase.jl")
 
 
 # Inizialize section
@@ -646,25 +647,6 @@ function setPath(root,pathLiv1,pathLiv2)
 end
 
 
-function getDDSSize(imageWithPathTypeDDS)
-    if isfile(imageWithPathTypeDDS)
-        try
-            if Base.Sys.iswindows()
-                identify = read(`magick identify $imageWithPathTypeDDS`,String)
-            else
-                identify = read(`identify $imageWithPathTypeDDS`,String)
-            end
-            a = split(split(identify," ")[3],"x")
-            return true, parse(Int64,a[1]), parse(Int64,a[2])
-        catch
-            return false,0,0
-        end
-    else
-        return false,0,0
-    end
-end
-
-
 # Analyze the quality of the image
 #  > 0  Image quality
 # == 0  Image does not exist
@@ -783,7 +765,7 @@ function downloadImages(lonLL,latLL,lonUR,latUR,cols,sizeWidth,imageWithPathType
 end
 
 
-function createDDSFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::MapServer,debugLevel)
+function createDDSFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::MapServer,tileDatabase,debugLevel)
 
     theBatchIsNotCompleted = false
     t0 = time()
@@ -798,7 +780,6 @@ function createDDSFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::
         tileIndex = tp[7]
         imageWithPathTypePNG = normpath(path * "/" * string(tp[7]) * ".png")
         imageWithPathTypeDDS = normpath(path * "/" * string(tp[7]) * ".dds")
-
         # Check the image DDS is present
         dataFileImageDDS = getDDSSize(imageWithPathTypeDDS)
         createDDSFile = false
@@ -825,40 +806,52 @@ function createDDSFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::
         end
 
         if createDDSFile
-            isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],tp[13],tp[12],imageWithPathTypePNG,mapServer,debugLevel) > 0
-            if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
-                # Conversion from .png to .dds
-                try
-                    # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
-                    # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
-                    # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
-                    oldFileIsPresent = isfile(imageWithPathTypeDDS)
-                    fileSizePNG = stat(imageWithPathTypePNG).size
-                    if Base.Sys.iswindows()
-                        run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
-                    else
-                        imageMagickPath != nothing ? imageMagickWithPathUnix = normpath(imageMagickPath * "/" * "convert") : imageMagickWithPathUnix = "convert"
-                        run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
-                    end
-                    fileSizeDDS = stat(imageWithPathTypeDDS).size
-                    if debugLevel > 0 println("createDDSFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
-                    rm(imageWithPathTypePNG)
-                    theBatchIsNotCompleted = false
-                    oldFileIsPresent ? theDDSFileIsOk = 2 : theDDSFileIsOk = 1
-                    timeElaboration = time()-t0
-                catch err
-                    if debugLevel > 1 println("createDDSFile - Error to convert the $imageWithPathTypePNG file in dds format") end
-                    try
-                        rm(imageWithPathTypePNG)
-                    catch
-                        if debugLevel > 1 println("createDDSFile - Error to remove the $imageWithPathTypePNG file") end
-                    end
-                    theBatchIsNotCompleted = true
-                    if theDDSFileIsOk == 0 theDDSFileIsOk = -10 end
-                end
+            # Check if there is a file somewhere that could be used as DDS
+            (foundIndex,foundDDSPath,toDDSPath) = copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath)
+            if foundIndex != nothing
+                theBatchIsNotCompleted = false
+                theDDSFileIsOk = 3
+                if debugLevel > 1 println("createDDSFile - index: $foundIndex from: $foundDDSPath to $toDDSPath") end
+                fileSizePNG = 0
+                fileSizeDDS = stat(imageWithPathTypeDDS).size
+                timeElaboration = time()-t0
             else
-                theBatchIsNotCompleted = true
-                if theDDSFileIsOk == 0 theDDSFileIsOk = -11 end
+                # The DDS file was not found, so it must be obtained from an external site
+                isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],tp[13],tp[12],imageWithPathTypePNG,mapServer,debugLevel) > 0
+                if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
+                    # Conversion from .png to .dds
+                    try
+                        # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
+                        # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
+                        # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
+                        oldFileIsPresent = isfile(imageWithPathTypeDDS)
+                        fileSizePNG = stat(imageWithPathTypePNG).size
+                        if Base.Sys.iswindows()
+                            run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
+                        else
+                            imageMagickPath != nothing ? imageMagickWithPathUnix = normpath(imageMagickPath * "/" * "convert") : imageMagickWithPathUnix = "convert"
+                            run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
+                        end
+                        fileSizeDDS = stat(imageWithPathTypeDDS).size
+                        if debugLevel > 0 println("createDDSFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
+                        rm(imageWithPathTypePNG)
+                        theBatchIsNotCompleted = false
+                        oldFileIsPresent ? theDDSFileIsOk = 2 : theDDSFileIsOk = 1
+                        timeElaboration = time()-t0
+                    catch err
+                        if debugLevel > 1 println("createDDSFile - Error to convert the $imageWithPathTypePNG file in dds format") end
+                        try
+                            rm(imageWithPathTypePNG)
+                        catch
+                            if debugLevel > 1 println("createDDSFile - Error to remove the $imageWithPathTypePNG file") end
+                        end
+                        theBatchIsNotCompleted = true
+                        if theDDSFileIsOk == 0 theDDSFileIsOk = -10 end
+                    end
+                else
+                    theBatchIsNotCompleted = true
+                    if theDDSFileIsOk == 0 theDDSFileIsOk = -11 end
+                end
             end
         else
             if theDDSFileIsOk == 0 theDDSFileIsOk = -12 end
@@ -1098,6 +1091,11 @@ function main(args)
         end
     end
 
+    # Generate the TileDatabase
+    println("\nCreate the Tile Database")
+    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS()
+    println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
+
     # Download thread
     timeElaborationForAllTilesInserted = 0.0
     timeElaborationForAllTilesResidual = 0.0
@@ -1165,7 +1163,7 @@ function main(args)
                 Threads.@threads for cmg in cmgsExtract(cmgs)
                     threadsActive += 1
                     theBatchIsNotCompleted = false
-                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,overWriteTheTiles,imageMagickPath,mapServer,debugLevel)
+                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,overWriteTheTiles,imageMagickPath,mapServer,tileDatabase,debugLevel)
                     if theDDSFileIsOk >= 1
                         numbersOfTilesElaborate += 1
                         if timeElaboration != nothing && theBatchIsNotCompleted == false
@@ -1195,6 +1193,9 @@ function main(args)
                             totalBytePNG += fileSizePNG
                             totalByteDDS += fileSizeDDS
                             theDDSFileIsOkStatus = "(Updated)   "
+                        elseif theDDSFileIsOk == 3
+                            totalByteDDS += fileSizeDDS
+                            theDDSFileIsOkStatus = "(Copied)   "
                         elseif theDDSFileIsOk == -1
                             theDDSFileIsOkStatus = "(Removed)   "
                         elseif theDDSFileIsOk == -2

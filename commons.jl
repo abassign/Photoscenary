@@ -75,3 +75,22 @@ function getFileName(filename::String)
     return fl != nothing ? filename[1:fl-1] : nothing
 end
 
+
+
+function getDDSSize(imageWithPathTypeDDS)
+    if isfile(imageWithPathTypeDDS)
+        try
+            if Base.Sys.iswindows()
+                identify = read(`magick identify $imageWithPathTypeDDS`,String)
+            else
+                identify = read(`identify $imageWithPathTypeDDS`,String)
+            end
+            a = split(split(identify," ")[3],"x")
+            return true, parse(Int64,a[1]), parse(Int64,a[2])
+        catch
+            return false,0,0
+        end
+    else
+        return false,0,0
+    end
+end

@@ -31,6 +31,13 @@
             <url-base>https://www.ign.es/wms-inspire/pnoa-ma?</url-base>
             <url-command>SERVICE=WMS|VERSION=1.1.1|REQUEST=GetMap|LAYERS=OI.OrthoimageCoverage|SRS=EPSG:4326|BBOX={lonLL},{latLL},{lonUR},{latUR}|WIDTH={szWidth}|HEIGHT={szHight}|FORMAT=image/png</url-command>
         </server>
+        <server>
+            <id>4</id>
+            <name>Geoportal</name>
+            <comment>geoportal.gov.pl only Poland, license (https://www.geoportal.gov.pl/data/free-data)</comment>
+            <url-base>https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution/WMSServer? </url-base>
+            <url-command>REQUEST=GetMap|VERSION=1.3.0|TRANSPARENT=TRUE|LAYERS=RASTER|STYLES=|CRS=CRS:84|EXCEPTIONS=xml|BBOX={lonLL},{latLL},{lonUR},{latUR}|WIDTH={szWidth}|HEIGHT={szHight}|FORMAT=image/png</url-command>
+        </server>
     </servers>
 </params>
 
