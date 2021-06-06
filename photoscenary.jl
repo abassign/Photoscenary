@@ -100,6 +100,7 @@ begin
         using DataFrames
         using DataFramesMeta
         using Geodesy
+        using Parsers
     catch
         if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
     end
@@ -127,6 +128,7 @@ begin
             Pkg.add("DataFrames")
             Pkg.add("DataFramesMeta")
             Pkg.add("Geodesy")
+            Pkg.add("Parsers")
             println("\nThe Julia system has been updated")
         end
     catch err
@@ -143,48 +145,10 @@ end
 
 @everywhere using SharedArrays
 
-m = [90, 89, 86, 83, 76, 62, 22,-22]
-n = [12.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125]
 
+include("commons.jl")
+include("tilesDatabase.jl")
 
-completedTile = Dict{Int64,Int64}()
-
-tileWidth(lat) = reduce(+,map((x,y,z)->z * (abs(lat) < x) * (abs(lat) >= y),m,m[begin+1:end],n))
-
-baseX(lat,lon) = floor(floor(lon / tileWidth(lat)) * tileWidth(lat))
-x(lat,lon) = floor(Int,(lon - baseX(lat,lon)) / tileWidth(lat))
-baseY(lat) = floor(lat)
-y(lat) = floor(Int,(lat - baseY(lat)) * 8)
-
-index(lat,lon) = (floor(Int,lon + 180) << 14) + floor(Int,lat + 90) << 6 + (y(lat) << 3) + x(lat,lon)
-
-minLat(lat) = baseY(lat) + 1.0 * (y(lat) // 8)
-maxLat(lat) = baseY(lat) + 1.0 * ((1 + y(lat)) // 8)
-
-minLon(lat,lon) = baseX(lat,lon) + x(lat,lon) * tileWidth(lat)
-maxLon(lat,lon) = minLon(lat,lon) + tileWidth(lat)
-
-centerLat(lat) = minLat(lat) + (maxLat(lat) - minLat(lat)) / 2.0
-centerLon(lat,lon) = minLon(lat,lon) + (maxLon(lat,lon) - minLon(lat,lon)) / 2.0
-
-longDegOnLatitudeNm(lat) = 2 * pi * 6371.0 * 0.53996 * cosd(lat) / 360.0
-longDegOnLongitudeNm() = pi * 6378.0 * 0.53996 / 180
-
-latDegByCentralPoint(lat,lon,radius) = (
-    round((lat -  mod(lat,0.125)) - (radius/longDegOnLongitudeNm()),digits=1),
-    round((lon -  mod(lon,tileWidth(lat))) - (radius/longDegOnLatitudeNm(lat)),digits=1),
-    round((lat - mod(lat,0.125) + 0.125) + (radius/longDegOnLongitudeNm()),digits=1),
-    round((lon - mod(lon,tileWidth(lat)) + tileWidth(lat))+ (radius/longDegOnLatitudeNm(lat)),digits=1))
-
-sizeHight(sizeWidth,lat) = Int(sizeWidth / (8 * tileWidth(lat)))
-
-function coordFromIndex(index)
-    lon = (index >> 14) - 180
-    lat = ((index - ((lon + 180) << 14)) >> 6) - 90
-    y = (index - (((lon + 180) << 14) + ((lat + 90) << 6))) >> 3
-    x = index - ((((lon + 180) << 14) + ((lat + 90) << 6)) + (y << 3))
-    return lon + (tileWidth(lat) / 2.0 + x * tileWidth(lat)) / 2.0, lat + (0.125 / 2 + y * 0.125) / 2.0, lon, lat, x, y
-end
 
 # Inizialize section
 
@@ -273,6 +237,158 @@ struct MapServer
 end
 
 
+struct MapCoordinates
+    lat::Float64
+    lon::Float64
+    radius::Float64
+    latLL::Float64
+    lonLL::Float64
+    latUR::Float64
+    lonUR::Float64
+    isDeclarePolar::Bool
+
+    function MapCoordinates(lat::Float64,lon::Float64,radius::Float64)
+        (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(lat,lon,radius)
+        return new(lat,lon,radius,latLL,lonLL,latUR,lonUR,true)
+    end
+
+    function MapCoordinates(latLL::Float64,lonLL::Float64,latUR::Float64,lonUR::Float64)
+        lon = lonLL + (lonUR - lonLL) / 2.0
+        lat = latLL + (latUR - latLL) / 2.0
+        lonDist = abs(lonUR - lonLL) / 2.0
+        latDist = abs(latUR - latLL) / 2.0
+        posLL = LLA(latLL,lonLL, 0.0)
+        posUR = LLA(latUR,lonUR, 0.0)
+        radius = round(euclidean_distance(posUR,posLL) / 1852.0,digits=2)
+        return new(lat,lon,radius,latLL,lonLL,latUR,lonUR,false)
+    end
+
+end
+
+
+function getSizePixel(size)
+    if size <= 0
+        sizeWidth = 512
+        cols = 1
+    elseif size <= 1
+        sizeWidth = 1024
+        cols = 1
+    elseif size <= 2
+        sizeWidth = 2048
+        cols = 1
+    elseif size <= 3
+        sizeWidth = 4096
+        cols = 2
+    elseif size <= 4
+        sizeWidth = 8192
+        cols = 4
+    elseif size <= 5
+        sizeWidth = 16384
+        cols = 8
+    else
+        sizeWidth = 32768
+        cols = 8
+    end
+    return sizeWidth, cols
+end
+
+
+function getSizePixelWidthByDistance(size,sizeDwn,radius,distance,unCompletedTilesAttemps)
+    if sizeDwn > size sizeDwn = size end
+    if unCompletedTilesAttemps > 0
+        size = size - unCompletedTilesAttemps
+        if size > 2
+            size = 2
+        elseif size < 0
+            size = 0
+        end
+        sizeDwn = sizeDwn - unCompletedTilesAttemps
+        if sizeDwn > 2
+            sizeDwn = 2
+        elseif sizeDwn < 0
+            sizeDwn = 0
+        end
+    end
+    ## s = Int64(size - round((size-sizeDwn) * distance / radius)) + 1
+    ## if s > size s = size end
+    getSizePixel(Int64(size - round((size-sizeDwn) * distance / radius)))
+end
+
+
+# Coordinates matrix generator
+function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size,sizeDwn,unCompletedTilesAttemps,isDebug)
+    numberOfTiles = 0
+    # Normalization to 0.125 deg
+    latLL = m.latLL - mod(m.latLL,0.125)
+    latUR = m.latUR - mod(m.latUR,0.125) + 0.125
+    lonLL = m.lonLL - mod(m.lonLL,tileWidth(m.lat))
+    lonUR = m.lonUR - mod(m.lonUR,tileWidth(m.lat)) + tileWidth(m.lat)
+    a = [(
+            string(lon >= 0.0 ? "e" : "w", lon >= 0.0 ? @sprintf("%03d",floor(abs(lon),digits=-1)) : @sprintf("%03d",ceil(abs(lon),digits=-1)),
+                lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(abs(lat),digits=-1)) : @sprintf("%02d",ceil(abs(lat),digits=-1))),
+            string(lon >= 0.0 ? "e" : "w", lon >= 0.0 ? @sprintf("%03d",floor(Int,abs(lon))) : @sprintf("%03d",ceil(Int,abs(lon))),
+                lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(Int,abs(lat))) : @sprintf("%02d",ceil(Int,abs(lat)))),
+            lon,
+            lat,
+            lon + tileWidth(lat),
+            lat + 0.125,
+            floor(Int,lat*10),
+            index(lat,lon),
+            x(lat,lon),
+            y(lat),
+            tileWidth(lat),
+## La distanza non sembra essere corretta
+            round(euclidean_distance(LLA(lat + (0.125/2.0),lon + tileWidth(lat)/2.0,0.0),LLA(m.lat,m.lon, 0.0)) / 1852.0 / 2.0,digits=3)
+        )
+        for lat in latLL:0.125:latUR for lon in lonLL:tileWidth(lat):lonUR]
+    # print data sort by tile index
+    ## aSort = sort!(a,by = x -> x[8])
+    # Sort by center distance
+    aSort = sort!(a,by = x -> x[12])
+    c = nothing
+    d = []
+    precIndex = nothing
+    counterIndex = 0
+    for b in aSort
+        if whiteTileIndexListDict == nothing || (whiteTileIndexListDict != nothing && haskey(whiteTileIndexListDict,b[8]))
+            if precIndex == nothing || precIndex != b[8]
+                if c != nothing push!(d,c) end
+                c = []
+                precIndex = b[8]
+                counterIndex = 1
+            else
+                counterIndex += 1
+            end
+            (widthByDistance,colsByDistance) = getSizePixelWidthByDistance(size,sizeDwn,m.radius,b[12],unCompletedTilesAttemps)
+            t = (b[1],b[2],b[3],b[5],b[4],b[6],b[8],counterIndex,b[11],0,b[12],widthByDistance,colsByDistance)
+            push!(c,t)
+            push!(c,0)
+            numberOfTiles += 1
+            if isDebug > 0 println("\nTile id: ",t[7]," coordinates: ",t[1]," ",t[2],
+                " | lon: ",@sprintf("%03.6f ",t[3]),
+                @sprintf("%03.6f ",t[4]),
+                "lat: ",@sprintf("%03.6f ",t[5]),
+                @sprintf("%03.6f ",t[6])," | Counter: ",t[8]," Width: ",@sprintf("%03.6f ",t[9]),
+                "dist: $(t[11]) size: $(t[12]) | $(t[13])") end
+        end
+    end
+    if c != nothing
+        push!(d,c)
+    end
+
+    if isDebug > 0
+        println("\n----------")
+        println("CoordinateMatrix generator")
+        println("latLL: ",latLL," lonLL ",lonLL," latUR: ",latUR," lonUR ",lonUR,'\n')
+        println("Number of tiles to process: $numberOfTiles")
+        println("----------\n")
+    end
+
+    return d,numberOfTiles
+end
+
+
+
 function getMapServerReplace(urlCmd,varString,varValue,errorCode)
     a = replace(urlCmd,varString => string(round(varValue,digits=6)))
     if a != urlCmd
@@ -298,21 +414,6 @@ function getMapServer(m::MapServer,latLL,lonLL,latUR,lonUR,szWidth,szHight)
     else
         return "", 412
     end
-end
-
-
-function findFile(fileName)
-    filesPath = Any[]
-    id = 0
-    for (root, dirs, files) in walkdir(homedir())
-        for file in files
-            if file == fileName
-                id += 1
-                push!(filesPath,(id,joinpath(root, file),stat(joinpath(root, file)).mtime))
-            end
-        end
-    end
-    return filesPath
 end
 
 
@@ -527,74 +628,6 @@ function selectIcao(icaoToSelect, centralPointRadiusDistance)
 end
 
 
-# Coordinates matrix generator
-
-function coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,whiteTileIndexListDict,isDebug)
-    numberOfTiles = 0
-    # Normalization to 0.125 deg
-    latLL = latLL - mod(latLL,0.125)
-    latUR = latUR - mod(latUR,0.125) + 0.125
-    lonLL = lonLL - mod(lonLL,tileWidth(latLL))
-    lonUR = lonUR - mod(lonUR,tileWidth(latLL)) + tileWidth(latLL)
-    a = [(
-            string(lon >= 0.0 ? "e" : "w", lon >= 0.0 ? @sprintf("%03d",floor(abs(lon),digits=-1)) : @sprintf("%03d",ceil(abs(lon),digits=-1)),
-                lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(abs(lat),digits=-1)) : @sprintf("%02d",ceil(abs(lat),digits=-1))),
-            string(lon >= 0.0 ? "e" : "w", lon >= 0.0 ? @sprintf("%03d",floor(Int,abs(lon))) : @sprintf("%03d",ceil(Int,abs(lon))),
-                lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(Int,abs(lat))) : @sprintf("%02d",ceil(Int,abs(lat)))),
-            lon,
-            lat,
-            lon + tileWidth(lat),
-            lat + 0.125,
-            floor(Int,lat*10),
-            index(lat,lon),
-            x(lat,lon),
-            y(lat),
-            tileWidth(lat)
-        )
-        for lat in latLL:0.125:latUR for lon in lonLL:tileWidth(lat):lonUR]
-    # print data sort by tile index
-    aSort = sort!(a,by = x -> x[8])
-    c = nothing
-    d = []
-    precIndex = nothing
-    counterIndex = 0
-    for b in aSort
-        if whiteTileIndexListDict == nothing || (whiteTileIndexListDict != nothing && haskey(whiteTileIndexListDict,b[8]))
-            if precIndex == nothing || precIndex != b[8]
-                if c != nothing push!(d,c) end
-                c = []
-                precIndex = b[8]
-                counterIndex = 1
-            else
-                counterIndex += 1
-            end
-            t = (b[1],b[2],b[3],b[5],b[4],b[6],b[8],counterIndex,b[11],0)
-            push!(c,t)
-            push!(c,0)
-            numberOfTiles += 1
-            if isDebug > 1 println("Tile id: ",t[7]," coordinates: ",t[1]," ",t[2],
-                " | lon: ",@sprintf("%03.6f ",t[3]),
-                @sprintf("%03.6f ",t[4]),
-                "lat: ",@sprintf("%03.6f ",t[5]),
-                @sprintf("%03.6f ",t[6])," | Counter: ",t[8]," Width: ",@sprintf("%03.6f",t[9])) end
-        end
-    end
-    if c != nothing
-        push!(d,c)
-    end
-
-    if isDebug > 0
-        println("\n----------")
-        println("CoordinateMatrix generator")
-        println("latLL: ",latLL," lonLL ",lonLL," latUR: ",latUR," lonUR ",lonUR,'\n')
-        println("Number of tiles to process: $numberOfTiles")
-        println("----------\n")
-    end
-
-    return d,numberOfTiles
-end
-
-
 function fileWithRootHomePath(fileName)
     return normpath(homeProgramPath * "/" * fileName)
 end
@@ -610,25 +643,6 @@ function setPath(root,pathLiv1,pathLiv2)
     catch err
         println("The $root directory is inexistent, the directory will be is created")
         return nothing
-    end
-end
-
-
-function getDDSSize(imageWithPathTypeDDS)
-    if isfile(imageWithPathTypeDDS)
-        try
-            if Base.Sys.iswindows()
-                identify = read(`magick identify $imageWithPathTypeDDS`,String)
-            else
-                identify = read(`identify $imageWithPathTypeDDS`,String)
-            end
-            a = split(split(identify," ")[3],"x")
-            return true, parse(Int64,a[1]), parse(Int64,a[2])
-        catch
-            return false,0,0
-        end
-    else
-        return false,0,0
     end
 end
 
@@ -751,7 +765,7 @@ function downloadImages(lonLL,latLL,lonUR,latUR,cols,sizeWidth,imageWithPathType
 end
 
 
-function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickPath,mapServer::MapServer,debugLevel)
+function createDDSFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::MapServer,tileDatabase,debugLevel)
 
     theBatchIsNotCompleted = false
     t0 = time()
@@ -766,7 +780,6 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
         tileIndex = tp[7]
         imageWithPathTypePNG = normpath(path * "/" * string(tp[7]) * ".png")
         imageWithPathTypeDDS = normpath(path * "/" * string(tp[7]) * ".dds")
-
         # Check the image DDS is present
         dataFileImageDDS = getDDSSize(imageWithPathTypeDDS)
         createDDSFile = false
@@ -778,7 +791,7 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
                 theDDSFileIsOk = -1
             elseif overWriteTheTiles == 2 || dataFileImageDDS[2] < 512 || dataFileImageDDS[2] > 32768
                 createDDSFile = true
-            elseif overWriteTheTiles == 1 && sizeWidth > dataFileImageDDS[2]
+            elseif overWriteTheTiles == 1 && tp[12] > dataFileImageDDS[2]
                 createDDSFile = true
             else
                 theDDSFileIsOk = -3
@@ -793,42 +806,52 @@ function createDDSFile(rootPath,tp,sizeWidth,cols,overWriteTheTiles,imageMagickP
         end
 
         if createDDSFile
-            #servicesWebUrl = "http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox="
-            #servicesWebUrl = servicesWebUrl * @sprintf("%03.6f,%03.6f,%03.6f,%03.6f",tp[3],tp[5],tp[4],tp[6]) * "&bboxSR=4326&size=$sizeWidth,$sizeHight&imageSR=4326&format=png24&f=image"
-            isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],cols,sizeWidth,imageWithPathTypePNG,mapServer,debugLevel) > 0
-            if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
-                # Conversion from .png to .dds
-                try
-                    # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
-                    # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
-                    # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
-                    oldFileIsPresent = isfile(imageWithPathTypeDDS)
-                    fileSizePNG = stat(imageWithPathTypePNG).size
-                    if Base.Sys.iswindows()
-                        run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
-                    else
-                        imageMagickPath != nothing ? imageMagickWithPathUnix = normpath(imageMagickPath * "/" * "convert") : imageMagickWithPathUnix = "convert"
-                        run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
-                    end
-                    fileSizeDDS = stat(imageWithPathTypeDDS).size
-                    if debugLevel > 0 println("createDDSFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
-                    rm(imageWithPathTypePNG)
-                    theBatchIsNotCompleted = false
-                    oldFileIsPresent ? theDDSFileIsOk = 2 : theDDSFileIsOk = 1
-                    timeElaboration = time()-t0
-                catch err
-                    if debugLevel > 1 println("createDDSFile - Error to convert the $imageWithPathTypePNG file in dds format") end
-                    try
-                        rm(imageWithPathTypePNG)
-                    catch
-                        if debugLevel > 1 println("createDDSFile - Error to remove the $imageWithPathTypePNG file") end
-                    end
-                    theBatchIsNotCompleted = true
-                    if theDDSFileIsOk == 0 theDDSFileIsOk = -10 end
-                end
+            # Check if there is a file somewhere that could be used as DDS
+            (foundIndex,foundDDSPath,toDDSPath) = copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath)
+            if foundIndex != nothing
+                theBatchIsNotCompleted = false
+                theDDSFileIsOk = 3
+                if debugLevel > 1 println("createDDSFile - index: $foundIndex from: $foundDDSPath to $toDDSPath") end
+                fileSizePNG = 0
+                fileSizeDDS = stat(imageWithPathTypeDDS).size
+                timeElaboration = time()-t0
             else
-                theBatchIsNotCompleted = true
-                if theDDSFileIsOk == 0 theDDSFileIsOk = -11 end
+                # The DDS file was not found, so it must be obtained from an external site
+                isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],tp[13],tp[12],imageWithPathTypePNG,mapServer,debugLevel) > 0
+                if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
+                    # Conversion from .png to .dds
+                    try
+                        # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
+                        # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
+                        # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
+                        oldFileIsPresent = isfile(imageWithPathTypeDDS)
+                        fileSizePNG = stat(imageWithPathTypePNG).size
+                        if Base.Sys.iswindows()
+                            run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
+                        else
+                            imageMagickPath != nothing ? imageMagickWithPathUnix = normpath(imageMagickPath * "/" * "convert") : imageMagickWithPathUnix = "convert"
+                            run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
+                        end
+                        fileSizeDDS = stat(imageWithPathTypeDDS).size
+                        if debugLevel > 0 println("createDDSFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
+                        rm(imageWithPathTypePNG)
+                        theBatchIsNotCompleted = false
+                        oldFileIsPresent ? theDDSFileIsOk = 2 : theDDSFileIsOk = 1
+                        timeElaboration = time()-t0
+                    catch err
+                        if debugLevel > 1 println("createDDSFile - Error to convert the $imageWithPathTypePNG file in dds format") end
+                        try
+                            rm(imageWithPathTypePNG)
+                        catch
+                            if debugLevel > 1 println("createDDSFile - Error to remove the $imageWithPathTypePNG file") end
+                        end
+                        theBatchIsNotCompleted = true
+                        if theDDSFileIsOk == 0 theDDSFileIsOk = -10 end
+                    end
+                else
+                    theBatchIsNotCompleted = true
+                    if theDDSFileIsOk == 0 theDDSFileIsOk = -11 end
+                end
             end
         else
             if theDDSFileIsOk == 0 theDDSFileIsOk = -12 end
@@ -895,6 +918,10 @@ function parseCommandline()
             help = "Max size of image 0->512 1->1024 2->2048 3->4096 4->8192 5->16384 6->32768"
             arg_type = Int64
             default = 2
+        "--sdwn"
+            help = "Down size with distance"
+            arg_type = Int64
+            default = 0
         "--over"
             help = "Overwrite the tiles: |1|only if bigger resolution |2|for all"
             arg_type = Int64
@@ -924,16 +951,16 @@ function parseCommandline()
 end
 
 
-function cmgsExtract(cmgs,cols)
+function cmgsExtract(cmgs)
     a = []
-    colsStop = Threads.nthreads() - cols
-    if colsStop > Sys.CPU_THREADS colsStop = Sys.CPU_THREADS end
-    if colsStop <= 0 colsStop = 1 end
     for cmg in cmgs
         if cmg[2] == 0
             push!(a,cmg[1])
             cmg[2] += 1
         end
+        colsStop = Threads.nthreads() - cmg[1][13]
+        if colsStop > Sys.CPU_THREADS colsStop = Sys.CPU_THREADS end
+        if colsStop <= 0 colsStop = 1 end
         if size(a)[1] >= colsStop
             break
         end
@@ -1041,35 +1068,10 @@ function main(args)
     end
 
     overWriteTheTiles = parsedArgs["over"]
+
     size = parsedArgs["size"]
-
-    # Only for testing! Remove when cols function is implemented
-
-    if size <= 0
-        sizeWidth = 512
-        cols = 1
-    elseif size == 1
-        sizeWidth = 1024
-        cols = 1
-    elseif size == 2
-        sizeWidth = 2048
-        cols = 1
-    elseif size == 3
-        sizeWidth = 4096
-        cols = 2
-    elseif size == 4
-        sizeWidth = 8192
-        cols = 4
-    elseif size == 5
-        sizeWidth = 16384
-        cols = 8
-    elseif size >= 6
-        sizeWidth = 32768
-        cols = 8
-    end
-
-    unCompletedTilesMaxAttempsBaseSize = Int64(sizeWidth / 2)
-    if unCompletedTilesMaxAttempsBaseSize > 1024 unCompletedTilesMaxAttempsBaseSize = 1024 end
+    sizeDwn = parsedArgs["sdwn"]
+    if sizeDwn == 0 sizeDwn = size end
 
     # Path prepare
     pathToTest = normpath(parsedArgs["path"])
@@ -1089,6 +1091,11 @@ function main(args)
         end
     end
 
+    # Generate the TileDatabase
+    println("\nCreate the Tile Database")
+    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS()
+    println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
+
     # Download thread
     timeElaborationForAllTilesInserted = 0.0
     timeElaborationForAllTilesResidual = 0.0
@@ -1103,18 +1110,23 @@ function main(args)
         end
 
         if systemCoordinatesIsPolar
-            (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(routeList[routeListStep][1],routeList[routeListStep][2],centralPointRadiusDistance)
+            ##(latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(routeList[routeListStep][1],routeList[routeListStep][2],centralPointRadiusDistance)
+            if !(inValue(routeList[routeListStep][1],90) && inValue(routeList[routeListStep][2],180))
+                println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlat: $(routeList[routeListStep][1]) lon: $(routeList[routeListStep][2])")
+                ccall(:jl_exit, Cvoid, (Int32,), 505)
+            end
+            mpc = MapCoordinates(routeList[routeListStep][1],routeList[routeListStep][2],centralPointRadiusDistance)
         else
             latLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latll"]),digits=3)
             lonLL = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonll"]),digits=3)
             latUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latur"]),digits=3)
             lonUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonur"]),digits=3)
-        end
-
-        # Check the coordinates
-        if !(inValue(latLL,90) && inValue(lonLL,180) && inValue(latUR,90) && inValue(lonUR,180))
-            println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlatLL: $latLL lonLL: $lonLL latUR: $latUR lonUR: $lonUR")
-            ccall(:jl_exit, Cvoid, (Int32,), 505)
+            # Check the coordinates
+            if !(inValue(latLL,90) && inValue(lonLL,180) && inValue(latUR,90) && inValue(lonUR,180))
+                println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlatLL: $latLL lonLL: $lonLL latUR: $latUR lonUR: $lonUR")
+                ccall(:jl_exit, Cvoid, (Int32,), 505)
+            end
+            mpc = MapCoordinates(latLL,lonLL,latUR,lonUR)
         end
 
         ifFristCycle = true
@@ -1128,38 +1140,30 @@ function main(args)
             # Generate the coordinate matrix
             # Resize management with smaller dimensions
             if ifFristCycle
-                sizeWidthByAttemps = sizeWidth
+                (cmgs,cmgsSize) = coordinateMatrixGenerator(mpc,nothing,size,sizeDwn,unCompletedTilesAttemps,debugLevel)
+                numbersOfTilesToElaborate = cmgsSize
             else
-                if unCompletedTilesAttemps > 0
-                    sizeWidthByAttemps = Int64(unCompletedTilesMaxAttempsBaseSize / 2^(unCompletedTilesAttemps - 1))
-                else
-                    sizeWidthByAttemps = sizeWidth
-                end
+                (cmgs,cmgsSize) = coordinateMatrixGenerator(mpc,unCompletedTiles,size,sizeDwn,unCompletedTilesAttemps,debugLevel)
+                numbersOfTilesToElaborate = cmgsSize
             end
 
-            if ifFristCycle
-                (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,nothing,debugLevel)
-                numbersOfTilesToElaborate = cmgsSize
-            else
-                (cmgs,cmgsSize) = coordinateMatrixGenerator(latLL,lonLL,latUR,lonUR,systemCoordinatesIsPolar,unCompletedTiles,debugLevel)
-                numbersOfTilesToElaborate = cmgsSize
-            end
             println("\nStart the elaboration n. $(unCompletedTilesAttemps+1) for $numbersOfTilesToElaborate tiles the Area deg is",
-                @sprintf(" latLL: %02.3f",latLL),
-                @sprintf(" lonLL: %03.3f",lonLL),
-                @sprintf(" latUR: %02.3f",latUR),
-                @sprintf(" lonUR: %03.3f",lonUR),
+                @sprintf(" latLL: %02.3f",mpc.latLL),
+                @sprintf(" lonLL: %03.3f",mpc.lonLL),
+                @sprintf(" latUR: %02.3f",mpc.latUR),
+                @sprintf(" lonUR: %03.3f",mpc.lonUR),
                 " Batch size: $cmgsSize",
-                " Width pix: $sizeWidthByAttemps",
+                " Width $(getSizePixel(size)[1]) | $(getSizePixel(size)[2])",
+                " to $(getSizePixel(sizeDwn)[1]) | $(getSizePixel(sizeDwn)[2]) pix",
                 " Cycle: $unCompletedTilesAttemps",
                 "\nThe images path is: $rootPath\n")
 
             while cmgsExtractTest(cmgs)
                 threadsActive = 0
-                Threads.@threads for cmg in cmgsExtract(cmgs,cols)
+                Threads.@threads for cmg in cmgsExtract(cmgs)
                     threadsActive += 1
                     theBatchIsNotCompleted = false
-                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,sizeWidthByAttemps,cols,overWriteTheTiles,imageMagickPath,mapServer,debugLevel)
+                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,overWriteTheTiles,imageMagickPath,mapServer,tileDatabase,debugLevel)
                     if theDDSFileIsOk >= 1
                         numbersOfTilesElaborate += 1
                         if timeElaboration != nothing && theBatchIsNotCompleted == false
@@ -1189,6 +1193,9 @@ function main(args)
                             totalBytePNG += fileSizePNG
                             totalByteDDS += fileSizeDDS
                             theDDSFileIsOkStatus = "(Updated)   "
+                        elseif theDDSFileIsOk == 3
+                            totalByteDDS += fileSizeDDS
+                            theDDSFileIsOkStatus = "(Copied)   "
                         elseif theDDSFileIsOk == -1
                             theDDSFileIsOkStatus = "(Removed)   "
                         elseif theDDSFileIsOk == -2
@@ -1210,6 +1217,8 @@ function main(args)
                             @sprintf(" err %4d",unCompletedTilesNumber),
                             @sprintf(" Th: %2d",threadsActive),
                             " path: $pathRel/$tile ",
+                            @sprintf(" Dist: %5.1f",cmg[11]),
+                            @sprintf(" pix: %5d",cmg[12]),
                             @sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),
                             @sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000),
                             theDDSFileIsOkStatus
