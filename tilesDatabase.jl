@@ -4,6 +4,7 @@ using Parsers
 
 
 include("commons.jl")
+include("ScanDir.jl")
 
 
 struct TailCoordinates
@@ -107,7 +108,8 @@ function updateFilesListTypeDDS(path::String=homedir())
     filesPath = Dict{Int64,TailGroupByIndex}()
     rowsNumber = 0
     filesSize = 0
-    for (root, dirs, files) in walkdir(path)
+    for (root, dirs, files) in ScanDir.walkdir(path)
+        #println("root: $root dirs: $dirs files: $files")
         for file in files
             fe = getFileExtension(file)
             if fe != nothing && uppercase(fe) == ".DDS"
@@ -119,11 +121,11 @@ function updateFilesListTypeDDS(path::String=homedir())
                     if findlast(fileWithPath,jp) != nothing
                         (isDDS,pixelSizeW,pixelSizeH) = getDDSSize(jp)
                         if isDDS
-                            rowsNumber += 1
                             td = TailData(jp,file,stat(jp).mtime,stat(jp).size,pixelSizeW,pixelSizeH)
-                            filesSize += stat(jp).size
                             if !haskey(filesPath,index) filesPath[index] = TailGroupByIndex() end
                             tailGroupByIndexInsert(filesPath[index],index,td)
+                            rowsNumber += 1
+                            filesSize += stat(jp).size
                         end
                     end
                 end
