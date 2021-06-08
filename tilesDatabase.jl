@@ -108,29 +108,34 @@ function updateFilesListTypeDDS(path::String=homedir())
     filesPath = Dict{Int64,TailGroupByIndex}()
     rowsNumber = 0
     filesSize = 0
-    for (root, dirs, files) in ScanDir.walkdir(path)
-        #println("root: $root dirs: $dirs files: $files")
-        for file in files
-            fe = getFileExtension(file)
-            if fe != nothing && uppercase(fe) == ".DDS"
-                index = Parsers.tryparse(Int,getFileName(file))
-                if index != nothing
-                    cfi = coordFromIndex(index)
-                    fileWithPath = cfi[7] * "/" * cfi[8] * "/" * string(index) * ".dds"
-                    jp = joinpath(root, file)
-                    if findlast(fileWithPath,jp) != nothing
-                        (isDDS,pixelSizeW,pixelSizeH) = getDDSSize(jp)
-                        if isDDS
-                            td = TailData(jp,file,stat(jp).mtime,stat(jp).size,pixelSizeW,pixelSizeH)
-                            if !haskey(filesPath,index) filesPath[index] = TailGroupByIndex() end
-                            tailGroupByIndexInsert(filesPath[index],index,td)
-                            rowsNumber += 1
-                            filesSize += stat(jp).size
+    if ispath(path)
+        for (root, dirs, files) in ScanDir.walkdir(path)
+            for file in files
+                fe = getFileExtension(file)
+                if fe != nothing && uppercase(fe) == ".DDS"
+                    index = Parsers.tryparse(Int,getFileName(file))
+                    if index != nothing
+                        cfi = coordFromIndex(index)
+                        slash = "/"
+                        if Base.Sys.iswindows() slash = "\\" end
+                        fileWithPath = cfi[7] * slash * cfi[8] * slash * string(index) * ".dds"
+                        jp = joinpath(root, file)
+                        if findlast(fileWithPath,jp) != nothing
+                            (isDDS,pixelSizeW,pixelSizeH) = getDDSSize(jp)
+                            if isDDS
+                                td = TailData(jp,file,stat(jp).mtime,stat(jp).size,pixelSizeW,pixelSizeH)
+                                if !haskey(filesPath,index) filesPath[index] = TailGroupByIndex() end
+                                tailGroupByIndexInsert(filesPath[index],index,td)
+                                rowsNumber += 1
+                                filesSize += stat(jp).size
+                            end
                         end
                     end
                 end
             end
         end
+        return JuliaDB.table(collect(filesPath);pkey=1),rowsNumber,filesSize
+    else
+        print("\nError: not found the root path: $path")
     end
-    return JuliaDB.table(collect(filesPath);pkey=1),rowsNumber,filesSize
 end
