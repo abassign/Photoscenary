@@ -1,3 +1,6 @@
+# From: https://github.com/yha/ScanDir.jl
+# https://github.com/JuliaLang/julia/issues/37260 for the " Closed walkdir no longer errors if it is called on a non-existing folder"
+
 module ScanDir
 
 export scandir, scandirtree, DirEntry
@@ -95,7 +98,8 @@ function scandirtree(root="."; topdown=true, follow_symlinks=false, onerror=thro
             push!(chnl, (; root, dirs, files))
         end
         for dir in dirs
-            _scandirtree(chnl, joinpath(root, dir.name))
+            jp = joinpath(root, dir.name)
+            gperm(jp) != 0x00 && _scandirtree(chnl, jp)
         end
         if !topdown
             push!(chnl, (; root, dirs, files))

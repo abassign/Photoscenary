@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.2.10"
-versionProgramDate = "Testing 20210607"
+versionProgram = "0.2.11"
+versionProgramDate = "Testing 20210608"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -148,8 +148,8 @@ end
 try
     include("commons.jl")
     include("tilesDatabase.jl")
-catch
-    println("\nError, the commons.jl file or the tilesDatabase.jl file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.")
+catch err
+    println("\nError, the commons.jl file or the tilesDatabase.jl file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.\n$err")
     ccall(:jl_exit, Cvoid, (Int32,), 500)
 end
 
@@ -1097,11 +1097,7 @@ function main(args)
 
     # Generate the TileDatabase
     println("\nCreate the Tile Database")
-    if Base.Sys.iswindows()
-        tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS(rootPath)
-    else
-        tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS()
-    end
+    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS()
 
     println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
 
