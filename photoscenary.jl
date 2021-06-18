@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.2.11"
-versionProgramDate = "Testing 20210608"
+versionProgram = "0.3.0"
+versionProgramDate = "Testing 20210618"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -101,6 +101,8 @@ begin
         using DataFramesMeta
         using Geodesy
         using Parsers
+        using Sockets
+        using EzXML
     catch
         if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
     end
@@ -129,6 +131,8 @@ begin
             Pkg.add("DataFramesMeta")
             Pkg.add("Geodesy")
             Pkg.add("Parsers")
+            Pkg.add("Sockets")
+            Pkg.add("EzXML")
             println("\nThe Julia system has been updated")
         end
     catch err
@@ -148,6 +152,8 @@ end
 try
     include("commons.jl")
     include("tilesDatabase.jl")
+    include("connector.jl")
+    include("Geodesics.jl")
 catch err
     println("\nError, the commons.jl file or the tilesDatabase.jl file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.\n$err")
     ccall(:jl_exit, Cvoid, (Int32,), 500)
@@ -161,8 +167,8 @@ function inizializeParams()
     paramsXml = nothing
     if isfile("params.xml")
         paramsXml = parse_file("params.xml")
-        if "params" == lowercase(name(root(paramsXml)))
-            xroot = root(paramsXml)
+        if "params" == lowercase(name(LightXML.root(paramsXml)))
+            xroot = LightXML.root(paramsXml)
             ces = get_elements_by_tagname(xroot,"versioning")
             if ces != nothing && find_element(ces[1],"version") != nothing
                 set_content(find_element(ces[1],"version"),versionProgram)
@@ -181,8 +187,8 @@ function inizialize()
     imageMagickPath = nothing
     if isfile("params.xml")
         paramsXml = parse_file("params.xml")
-        if "params" == lowercase(name(root(paramsXml)))
-            xroot = root(paramsXml)
+        if "params" == lowercase(name(LightXML.root(paramsXml)))
+            xroot = LightXML.root(paramsXml)
             ces = get_elements_by_tagname(xroot,"versioning")
             if ces != nothing && size(ces)[1] > 0 && find_element(ces[1],"version") != nothing
                 versionFromParams = content(find_element(ces[1],"version"))
@@ -200,8 +206,8 @@ function inizialize()
     end
     println('\n',"Photoscenery generator by Julia compilator,\nProgram for uploading Orthophotos files\n")
     paramsXml = parse_file("params.xml")
-    if "params" == lowercase(name(root(paramsXml)))
-        ces = get_elements_by_tagname(root(paramsXml),"versioning")
+    if "params" == lowercase(name(LightXML.root(paramsXml)))
+        ces = get_elements_by_tagname(LightXML.root(paramsXml),"versioning")
     end
     return imageMagickPath
 end
@@ -219,7 +225,7 @@ struct MapServer
 
     function MapServer(id,aProxy=nothing)
         try
-            serversRoot = get_elements_by_tagname(root(parse_file("params.xml")),"servers")
+            serversRoot = get_elements_by_tagname(LightXML.root(parse_file("params.xml")),"servers")
             servers = get_elements_by_tagname(serversRoot[1], "server")
             for server in servers
                 if server!= nothing
@@ -430,7 +436,7 @@ function findFileOfRoute(fileName)
         if file[3] > date
             # Test the file
             try
-                route = get_elements_by_tagname(root(parse_file(file[2])),"route")
+                route = get_elements_by_tagname(LightXML.root(parse_file(file[2])),"route")
                 fileId = file[1]
                 date = file[3]
             catch
@@ -934,9 +940,12 @@ function parseCommandline()
             help = "Path to store the dds images"
             arg_type = String
             default = "fgfs-scenery/photoscenery"
+        "--connect"
+            help = "IP and port FGFS program, example format: \"127.0.0.1:5000\""
+            arg_type = String
+            default = nothing
         "--proxy"
             help = "Proxy string ipv4:port for example: \"192.168.0.1:8080\""
-            arg_type = String
             default = nothing
         "--attemps"
             help = "Number of download attempts"
@@ -996,6 +1005,7 @@ function main(args)
     routeList = Any[]
     routeListStep = 1
     routeListSize = 0
+    positionRoute = nothing
 
     imageMagickPath = inizialize()
     (imageMagickStatus, imageMagickPath) = checkImageMagick(imageMagickPath)
@@ -1053,6 +1063,29 @@ function main(args)
     elseif parsedArgs["route"] != nothing
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         (routeList,routeListSize) = loadRoute(parsedArgs["route"],centralPointRadiusDistance)
+    elseif parsedArgs["connect"] != nothing
+        connectArg = parsedArgs["connect"]
+        if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
+        # The route is built in connection with the aircraft
+        # The construction of the route is therefore dynamic
+        positionRoute = FGFSPositionRoute(centralPointRadiusDistance)
+        getFGFSPositionSetTask(positionRoute,connectArg)
+        # It waits for a small amount of time to connect to the server
+        t0 = time()
+        timeOut = 3.0
+        while (time() - t0) < timeOut
+            sleep(0.5)
+            if positionRoute.size > 0
+                routeList = push!(routeList,(positionRoute.marks[1].latitudeDeg,positionRoute.marks[1].longitudeDeg))
+                break
+            end
+            println("Try connect to Flightgear program with address: $connectArg")
+        end
+        if Base.size(routeList)[1] == 0
+            println("\nError: The connection to the FGFS program with IP address: $connectArg was not successful\ncheck if the FGFS program is active and the connection parameters")
+            ccall(:jl_exit, Cvoid, (Int32,), 403)
+        end
+        routeListSize = 1
     else
         centralPointLat = setDegreeUnit(isSexagesimalUnit,parsedArgs["lat"])
         centralPointLon = setDegreeUnit(isSexagesimalUnit,parsedArgs["lon"])
@@ -1257,6 +1290,21 @@ function main(args)
         println("\n\nThe process is finish, ",@sprintf("Time elab: %5.1f ",time()-timeStart)," number of tiles: ",numbersOfTilesToElaborate," time for tile: ",@sprintf("%5.1f",(time()-timeStart)/numbersOfTilesToElaborate),@sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),@sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000))
 
         routeListStep += 1
+
+        if positionRoute != nothing
+            println("\n\nA new section of the route begins,\nas soon as the distance is sufficient, and a new reading of tiles occurs\n")
+            if routeListStep > routeListSize && ifFGFSActive(positionRoute)
+                while positionRoute.size < routeListStep && ifFGFSActive(positionRoute)
+                    sleep(positionRoute.stepTime)
+                    println("System pending further advancement speed (mph): ",@sprintf("%5.1f",positionRoute.actualSpeed)," distance (nm): ",@sprintf("%5.1f",positionRoute.actualDistance)," on radius: ",@sprintf("%5.1f",positionRoute.radiusStep)," Direction (deg): ",@sprintf("%4.1f",positionRoute.actualDirectionDeg))
+                end
+                while positionRoute.size > routeListSize
+                    routeListSize += 1
+                    routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
+                end
+            end
+        end
+
     end
 
 end
