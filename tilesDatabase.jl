@@ -104,12 +104,21 @@ function copyTilesByIndex(db,index::Int64,pixelSizeW::Int64,aBasePath::String)
 end
 
 
+function countDirError()
+    dirsWithErrors::Int = 0
+    add(err) = dirsWithErrors += 1
+    get() = dirsWithErrors
+    () -> (add;get)
+end
+
+
 function updateFilesListTypeDDS(path::String=homedir())
     filesPath = Dict{Int64,TailGroupByIndex}()
     rowsNumber = 0
     filesSize = 0
+    cde = countDirError()
     if ispath(path)
-        for (root, dirs, files) in ScanDir.walkdir(path)
+	for (root, dirs, files) in ScanDir.walkdir(path; onerror = e->(cde.add(e)))
             for file in files
                 fe = getFileExtension(file)
                 if fe != nothing && uppercase(fe) == ".DDS"
@@ -134,6 +143,7 @@ function updateFilesListTypeDDS(path::String=homedir())
                 end
             end
         end
+	println("updateFilesListTypeDDS: find n. $(cde.get()) dir with errors")
         return JuliaDB.table(collect(filesPath);pkey=1),rowsNumber,filesSize
     else
         print("\nError: not found the root path: $path")
