@@ -142,8 +142,9 @@ function updateFilesListTypeDDS(path::String=homedir())
                     end
                 end
             end
+            print("\rExecute update DDS list files: find n. $(rowsNumber) DDS Files with size: $(filesSize/1000000.0) Mb")
         end
-	println("updateFilesListTypeDDS: find n. $(cde.get()) dir with errors")
+        println("\nTerm update DDS list files: find n. $(cde.get()) dir with errors")
         return JuliaDB.table(collect(filesPath);pkey=1),rowsNumber,filesSize
     else
         print("\nError: not found the root path: $path")

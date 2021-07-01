@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.0"
-versionProgramDate = "Testing 20210618"
+versionProgram = "0.3.1"
+versionProgramDate = "Testing 20210701"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -77,7 +77,7 @@ begin
     local restartIsRequestCauseUpgrade = 0
 
     try
-        using ImageView
+        ##using ImageView
         using JuliaDB
     catch
         restartIsRequestCauseUpgrade = 2
@@ -109,7 +109,7 @@ begin
 
     try
         if restartIsRequestCauseUpgrade >= 2
-            Pkg.add("ImageView") # If this is execute is necessary to restart Julia
+            ##Pkg.add("ImageView") # If this is execute is necessary to restart Julia
             Pkg.add("JuliaDB")
         end
         if restartIsRequestCauseUpgrade >= 1
@@ -1006,6 +1006,8 @@ function main(args)
     routeListStep = 1
     routeListSize = 0
     positionRoute = nothing
+    arrow = displayCursorTypeA()
+    timeLastConnect = time()
 
     imageMagickPath = inizialize()
     (imageMagickStatus, imageMagickPath) = checkImageMagick(imageMagickPath)
@@ -1031,6 +1033,12 @@ function main(args)
 
     debugLevel = parsedArgs["debug"]
     if debugLevel > 1 @info "parsedArgs:" parsedArgs end
+
+    # Generate the TileDatabase
+    println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
+    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS()
+    println("The tiles database has been generated and verified")
+    println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
 
     # Process anothers options
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
@@ -1064,28 +1072,26 @@ function main(args)
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         (routeList,routeListSize) = loadRoute(parsedArgs["route"],centralPointRadiusDistance)
     elseif parsedArgs["connect"] != nothing
-        connectArg = parsedArgs["connect"]
+        connectIp = parsedArgs["connect"]
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         # The route is built in connection with the aircraft
-        # The construction of the route is therefore dynamic
-        positionRoute = FGFSPositionRoute(centralPointRadiusDistance)
-        getFGFSPositionSetTask(positionRoute,connectArg)
         # It waits for a small amount of time to connect to the server
-        t0 = time()
-        timeOut = 3.0
-        while (time() - t0) < timeOut
-            sleep(0.5)
-            if positionRoute.size > 0
-                routeList = push!(routeList,(positionRoute.marks[1].latitudeDeg,positionRoute.marks[1].longitudeDeg))
-                break
+        findPosition = false
+        @sync begin
+            println("\nTry to Flightgear connect with address: $connectIp radius: $centralPointRadiusDistance")
+            @async while !findPosition
+                if positionRoute == nothing positionRoute = getFGFSPositionSetTask(connectIp,centralPointRadiusDistance,debugLevel) end
+                if positionRoute.size > 0
+                    routeListSize += 1
+                    routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
+                    println("\nConnected to Flightgear with address: $connectIp radius: $centralPointRadiusDistance")
+                    findPosition = true
+                else
+                   print("\r$(arrow.get()) Try the frist connection to Flightgear with address: $connectIp waiting time: $(Int(round(time()-timeLastConnect))). Press CTRL+C to stop the program and exit")
+                   sleep(positionRoute.stepTime)
+                end
             end
-            println("Try connect to Flightgear program with address: $connectArg")
         end
-        if Base.size(routeList)[1] == 0
-            println("\nError: The connection to the FGFS program with IP address: $connectArg was not successful\ncheck if the FGFS program is active and the connection parameters")
-            ccall(:jl_exit, Cvoid, (Int32,), 403)
-        end
-        routeListSize = 1
     else
         centralPointLat = setDegreeUnit(isSexagesimalUnit,parsedArgs["lat"])
         centralPointLon = setDegreeUnit(isSexagesimalUnit,parsedArgs["lon"])
@@ -1127,12 +1133,6 @@ function main(args)
             rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
         end
     end
-
-    # Generate the TileDatabase
-    println("\nCreate the Tile Database")
-    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS()
-
-    println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
 
     # Download thread
     timeElaborationForAllTilesInserted = 0.0
@@ -1293,14 +1293,26 @@ function main(args)
 
         if positionRoute != nothing
             println("\n\nA new section of the route begins,\nas soon as the distance is sufficient, and a new reading of tiles occurs\n")
-            if routeListStep > routeListSize && ifFGFSActive(positionRoute)
-                while positionRoute.size < routeListStep && ifFGFSActive(positionRoute)
-                    sleep(positionRoute.stepTime)
-                    println("System pending further advancement speed (mph): ",@sprintf("%5.1f",positionRoute.actualSpeed)," distance (nm): ",@sprintf("%5.1f",positionRoute.actualDistance)," on radius: ",@sprintf("%5.1f",positionRoute.radiusStep)," Direction (deg): ",@sprintf("%4.1f",positionRoute.actualDirectionDeg))
-                end
-                while positionRoute.size > routeListSize
-                    routeListSize += 1
-                    routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
+            isSleep = false
+            while routeListStep > routeListSize
+                if telnetConnectionSockIsOpen(positionRoute)
+                    timeLastConnect = time()
+                    if isSleep
+                        println(" ")
+                        isSleep = false
+                    end
+                    while positionRoute.size < routeListStep && telnetConnectionSockIsOpen(positionRoute)
+                        sleep(positionRoute.stepTime * 2.5)
+                        println("System pending further advancement speed (mph): ",@sprintf("%5.1f",positionRoute.actualSpeed)," distance (nm): ",@sprintf("%5.1f",positionRoute.actualDistance)," on radius: ",@sprintf("%5.1f",positionRoute.radiusStep)," Direction (deg): ",@sprintf("%4.1f",positionRoute.actualDirectionDeg))
+                    end
+                    while positionRoute.size > routeListSize && telnetConnectionSockIsOpen(positionRoute)
+                        routeListSize += 1
+                        routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
+                    end
+                else
+                    print("\r$(arrow.get()) Try connect to Flightgear with address: $(parsedArgs["connect"]) waiting time: $(Int(round(time()-timeLastConnect))). Press CTRL+C to stop the program and exit")
+                    isSleep = true
+                    sleep(0.5)
                 end
             end
         end
