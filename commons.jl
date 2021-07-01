@@ -76,7 +76,6 @@ function getFileName(filename::String)
 end
 
 
-
 function getDDSSize(imageWithPathTypeDDS)
     if isfile(imageWithPathTypeDDS)
         try
@@ -93,4 +92,16 @@ function getDDSSize(imageWithPathTypeDDS)
     else
         return false,0,0
     end
+end
+
+
+function displayCursorTypeA()
+    i::Int64 = 1
+    ascii = ['\U2190','\U2196','\U2191','\U2197','\U2192','\U2198','\U2193','\U2199']
+    get() = begin
+        i += 1
+        if i > 8 i = 1 end
+        ascii[i]
+    end
+    () -> (get)
 end
