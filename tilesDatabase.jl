@@ -93,7 +93,9 @@ function copyTilesByIndex(db,index::Int64,pixelSizeW::Int64,aBasePath::String)
                 cfi = coordFromIndex(index)
                 basePath = normpath(aBasePath * "/" * cfi[7] * "/" * cfi[8] * "/" * string(index) * ".dds")
                 if !ispath(basePath) mkpath(basePath) end
-                cp(records.filesFound[1].path,basePath,force=true)
+                if records.filesFound[1].path != basePath
+                    cp(records.filesFound[1].path,basePath,force=true)
+                end
                 return (index,records.filesFound[1].path,basePath)
             end
         end

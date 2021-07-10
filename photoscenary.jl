@@ -85,6 +85,7 @@ begin
 
     try
         import ImageMagick
+        import Unicode: graphemes
         using Dates
         using Unicode
         using Downloads
