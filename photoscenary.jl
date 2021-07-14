@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.1"
-versionProgramDate = "Testing 20210701"
+versionProgram = "0.3.2"
+versionProgramDate = "Testing 20210714"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -85,7 +85,7 @@ begin
 
     try
         import ImageMagick
-        import Unicode: graphemes
+        import Unicode: graphemes # To solve the problem of an error in extracting unicode characters from a string.
         using Dates
         using Unicode
         using Downloads
@@ -734,7 +734,13 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
 end
 
 
-function downloadImages(lonLL,latLL,lonUR,latUR,cols,sizeWidth,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
+function downloadImages(tp,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
+    lonLL = tp[3]
+    latLL = tp[5]
+    lonUR = tp[4]
+    latUR = tp[6]
+    cols = tp[13]
+    sizeWidth = tp[12]
     sizeHight = Int(sizeWidth / (8 * tileWidth((latUR + latLL) / 2.0)))
     #imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
     imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
@@ -828,7 +834,7 @@ function createDDSFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::
                 timeElaboration = time()-t0
             else
                 # The DDS file was not found, so it must be obtained from an external site
-                isfileImagePNG = downloadImages(tp[3],tp[5],tp[4],tp[6],tp[13],tp[12],imageWithPathTypePNG,mapServer,debugLevel) > 0
+                isfileImagePNG = downloadImages(tp,imageWithPathTypePNG,mapServer,debugLevel) > 0
                 if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
                     # Conversion from .png to .dds
                     try
@@ -1043,7 +1049,6 @@ function main(args)
 
     # Process anothers options
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
-    unCompletedTilesAttemps = 0
     centralPointRadiusDistance = parsedArgs["radius"]
 
     if parsedArgs["icao"] != nothing
@@ -1170,6 +1175,7 @@ function main(args)
 
         ifFristCycle = true
         continueToReatray = true
+        unCompletedTilesAttemps = 0
         unCompletedTilesNumber = 0
         numbersOfTilesToElaborate = 0
         numbersOfTilesInserted = 0
