@@ -45,7 +45,7 @@ struct FGFSPosition
             dir = Main.Geodesics.azimuth(precPosition.longitudeDeg,precPosition.latitudeDeg,lon,lat)
             dist = Main.Geodesics.surface_distance(precPosition.longitudeDeg,precPosition.latitudeDeg,lon,lat,Main.Geodesics.localEarthRadius(lat)) / 1852.0
             deltaTime = t - precPosition.time
-            speedMph = dist * 3600 / deltaTime
+            speedMph = (dist-precPosition.distanceNm) * 3600 / deltaTime
             new(lat,lon,alt,dir,dist,speedMph,t)
         catch err
             println("FGFSPosition - Error: $err")

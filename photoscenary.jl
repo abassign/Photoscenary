@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.2"
-versionProgramDate = "Testing 20210714"
+versionProgram = "0.3.3"
+versionProgramDate = "Testing 20210726"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -348,7 +348,6 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
             x(lat,lon),
             y(lat),
             tileWidth(lat),
-## La distanza non sembra essere corretta
             round(euclidean_distance(LLA(lat + (0.125/2.0),lon + tileWidth(lat)/2.0,0.0),LLA(m.lat,m.lon, 0.0)) / 1852.0 / 2.0,digits=3)
         )
         for lat in latLL:0.125:latUR for lon in lonLL:tileWidth(lat):lonUR]
@@ -782,99 +781,183 @@ function downloadImages(tp,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
 end
 
 
-function createDDSFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::MapServer,tileDatabase,debugLevel)
+function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapServer::MapServer,tileDatabase::IndexedTable,isPngFileFormatOnly,pathToSave,debugLevel)
 
     theBatchIsNotCompleted = false
     t0 = time()
     timeElaboration = nothing
-    theDDSFileIsOk = 0
+    theDDSorPNGFileIsOk = 0
     tileIndex = 0
     fileSizePNG = 0
     fileSizeDDS = 0
+    format = isPngFileFormatOnly ? 0 : 1
+    isfileImagePNG = false
 
     path = setPath(rootPath,tp[1],tp[2])
     if path != nothing
+        createDDSorPNGFile = false
         tileIndex = tp[7]
-        imageWithPathTypePNG = normpath(path * "/" * string(tp[7]) * ".png")
-        imageWithPathTypeDDS = normpath(path * "/" * string(tp[7]) * ".dds")
-        # Check the image DDS is present
-        dataFileImageDDS = getDDSSize(imageWithPathTypeDDS)
-        createDDSFile = false
-        # Any images with PNG format are deleted
-        if isfile(imageWithPathTypePNG) rm(imageWithPathTypePNG) end
-        if dataFileImageDDS[1]
-            if overWriteTheTiles >= 9
-                rm(imageWithPathTypeDDS)
-                theDDSFileIsOk = -1
-            elseif overWriteTheTiles == 2 || dataFileImageDDS[2] < 512 || dataFileImageDDS[2] > 32768
-                createDDSFile = true
-            elseif overWriteTheTiles == 1 && tp[12] > dataFileImageDDS[2]
-                createDDSFile = true
-            else
-                theDDSFileIsOk = -3
-            end
-        else
-            if isfile(imageWithPathTypeDDS) rm(imageWithPathTypeDDS) end
-            if overWriteTheTiles < 9
-                createDDSFile = true
-            else
-                theDDSFileIsOk = -2
-            end
-        end
-
-        if createDDSFile
-            # Check if there is a file somewhere that could be used as DDS
-            (foundIndex,foundDDSPath,toDDSPath) = copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath)
-            if foundIndex != nothing
-                theBatchIsNotCompleted = false
-                theDDSFileIsOk = 3
-                if debugLevel > 1 println("createDDSFile - index: $foundIndex from: $foundDDSPath to $toDDSPath") end
-                fileSizePNG = 0
-                fileSizeDDS = stat(imageWithPathTypeDDS).size
-                timeElaboration = time()-t0
-            else
-                # The DDS file was not found, so it must be obtained from an external site
-                isfileImagePNG = downloadImages(tp,imageWithPathTypePNG,mapServer,debugLevel) > 0
-                if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
-                    # Conversion from .png to .dds
-                    try
-                        # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
-                        # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
-                        # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
-                        oldFileIsPresent = isfile(imageWithPathTypeDDS)
-                        fileSizePNG = stat(imageWithPathTypePNG).size
-                        if Base.Sys.iswindows()
-                            run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
-                        else
-                            imageMagickPath != nothing ? imageMagickWithPathUnix = normpath(imageMagickPath * "/" * "convert") : imageMagickWithPathUnix = "convert"
-                            run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
-                        end
-                        fileSizeDDS = stat(imageWithPathTypeDDS).size
-                        if debugLevel > 0 println("createDDSFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
-                        rm(imageWithPathTypePNG)
-                        theBatchIsNotCompleted = false
-                        oldFileIsPresent ? theDDSFileIsOk = 2 : theDDSFileIsOk = 1
-                        timeElaboration = time()-t0
-                    catch err
-                        if debugLevel > 1 println("createDDSFile - Error to convert the $imageWithPathTypePNG file in dds format") end
-                        try
-                            rm(imageWithPathTypePNG)
-                        catch
-                            if debugLevel > 1 println("createDDSFile - Error to remove the $imageWithPathTypePNG file") end
-                        end
-                        theBatchIsNotCompleted = true
-                        if theDDSFileIsOk == 0 theDDSFileIsOk = -10 end
-                    end
+        imageWithPathTypePNG = normpath(path * "/" * string(tileIndex) * ".png")
+        imageWithPathTypeDDS = normpath(path * "/" * string(tileIndex) * ".dds")
+        # Check the image is present
+        if isPngFileFormatOnly
+            if isfile(imageWithPathTypeDDS) moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
+            dataFileImagePNG = getPNGSize(imageWithPathTypePNG)
+            if dataFileImagePNG[1]
+                if overWriteTheTiles >= 9
+                    moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                    theDDSorPNGFileIsOk = -1
+                elseif overWriteTheTiles == 2 || dataFileImagePNG[2] < 512 || dataFileImagePNG[2] > 32768
+                    createDDSorPNGFile = true
+                    moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                elseif overWriteTheTiles == 1 && tp[12] > dataFileImagePNG[2]
+                    createDDSorPNGFile = true
                 else
-                    theBatchIsNotCompleted = true
-                    if theDDSFileIsOk == 0 theDDSFileIsOk = -11 end
+                    theDDSorPNGFileIsOk = -3
+                end
+            else
+                if isfile(imageWithPathTypePNG) moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave) end
+                if overWriteTheTiles < 9
+                    createDDSorPNGFile = true
+                else
+                    theDDSorPNGFileIsOk = -2
                 end
             end
         else
-            if theDDSFileIsOk == 0 theDDSFileIsOk = -12 end
+            dataFileImageDDS = getDDSSize(imageWithPathTypeDDS)
+            dataFileImagePNG = getPNGSize(imageWithPathTypePNG)
+            if dataFileImageDDS[1]
+                if overWriteTheTiles >= 9
+                    moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                    theDDSorPNGFileIsOk = -1
+                elseif overWriteTheTiles == 2 || dataFileImageDDS[2] < 512 || dataFileImageDDS[2] > 32768
+                    createDDSorPNGFile = true
+                elseif overWriteTheTiles == 1 && tp[12] > dataFileImageDDS[2]
+                    createDDSorPNGFile = true
+                else
+                    theDDSorPNGFileIsOk = -3
+                end
+            else
+                if dataFileImagePNG[1]
+                    if overWriteTheTiles >= 9
+                        moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                        theDDSorPNGFileIsOk = -1
+                    elseif overWriteTheTiles == 2 || dataFileImagePNG[2] < 512 || dataFileImagePNG[2] > 32768
+                        isfileImagePNG = false
+                        moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                        createDDSorPNGFile = true
+                    elseif overWriteTheTiles == 1 && tp[12] >= dataFileImagePNG[2]
+                        isfileImagePNG = true
+                        createDDSorPNGFile = true
+                    else
+                        isfileImagePNG = false
+                        moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                        createDDSorPNGFile = true
+                    end
+                else
+                    if isfile(imageWithPathTypeDDS) moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
+                    if overWriteTheTiles < 9
+                        createDDSorPNGFile = true
+                    else
+                        theDDSorPNGFileIsOk = -2
+                    end
+                end
+            end
+        end
+        if createDDSorPNGFile
+            # Check if there is a file somewhere that could be used as DDS
+            if !isfileImagePNG
+                moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                (foundIndex,foundPath,toPath,isSkip) = copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath,format)
+                if debugLevel > 0 println("createDDSorPNGFile - copyTilesByIndex foundIndex: $foundIndex | foundPath: $foundPath | toPath: $toPath | tileDatabase: $tileDatabase | tileIndex: $tileIndex | tp[12]: $(tp[12])") end
+            else
+                foundIndex = nothing
+            end
+            if foundIndex != nothing
+                theBatchIsNotCompleted = false
+                isSkip ? theDDSorPNGFileIsOk = -3 : theDDSorPNGFileIsOk = 3
+                if format == 0
+                    fileSizePNG = stat(imageWithPathTypePNG).size
+                    fileSizeDDS = 0
+                else
+                    fileSizePNG = 0
+                    fileSizeDDS = stat(imageWithPathTypeDDS).size
+                end
+                timeElaboration = time() - t0
+            else
+                # The DDS or PNG file was not found, so it must be obtained from an external site
+                if !isfileImagePNG
+                    moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                    moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                    isfileImagePNG = downloadImages(tp,imageWithPathTypePNG,mapServer,debugLevel) > 0
+                end
+                if isPngFileFormatOnly
+                    if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
+                        try
+                            fileSizePNG = stat(imageWithPathTypePNG).size
+                            fileSizeDDS = 0
+                            if debugLevel > 0 println("createDDSorPNGFile - The file $imageWithPathTypePNG is created") end
+                            theBatchIsNotCompleted = false
+                            theDDSorPNGFileIsOk = 1
+                            timeElaboration = time() - t0
+                        catch err
+                            if debugLevel > 1 println("createDDSorPNGFile - Error to create $imageWithPathTypePNG file in png format") end
+                            try
+                                rm(imageWithPathTypePNG)
+                            catch
+                                if debugLevel > 1 println("createDDSorPNGFile - Error to remove the $imageWithPathTypePNG file") end
+                            end
+                            theBatchIsNotCompleted = true
+                            if theDDSorPNGFileIsOk == 0 theDDSorPNGFileIsOk = -10 end
+                        end
+                    else
+                        theBatchIsNotCompleted = true
+                        if theDDSorPNGFileIsOk == 0 theDDSorPNGFileIsOk = -11 end
+                    end
+                else
+                    if isfileImagePNG > 0 && filesize(imageWithPathTypePNG) > 1024
+                        # Conversion from .png to .dds
+                        try
+                            # Original version: -define dds:compression=DXT5 dxt5:$imageWithPathTypeDDS
+                            # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
+                            # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
+                            oldFileIsPresent = isfile(imageWithPathTypeDDS)
+                            moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                            fileSizePNG = stat(imageWithPathTypePNG).size
+                            if Base.Sys.iswindows()
+                                run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
+                            else
+                                imageMagickPath != nothing ? imageMagickWithPathUnix = normpath(imageMagickPath * "/" * "convert") : imageMagickWithPathUnix = "convert"
+                                run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
+                            end
+                            fileSizeDDS = stat(imageWithPathTypeDDS).size
+                            if debugLevel > 0 println("createDDSorPNGFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
+                            rm(imageWithPathTypePNG)
+                            fileSizePNG = 0
+                            theBatchIsNotCompleted = false
+                            oldFileIsPresent ? theDDSorPNGFileIsOk = 2 : theDDSorPNGFileIsOk = 1
+                            timeElaboration = time() - t0
+                        catch err
+                            if debugLevel > 1 println("createDDSorPNGFile - Error to convert the $imageWithPathTypePNG file in dds format") end
+                            try
+                                rm(imageWithPathTypePNG)
+                            catch
+                                if debugLevel > 1 println("createDDSorPNGFile - Error to remove the $imageWithPathTypePNG file") end
+                            end
+                            theBatchIsNotCompleted = true
+                            if theDDSorPNGFileIsOk == 0 theDDSorPNGFileIsOk = -10 end
+                        end
+                    else
+                        theBatchIsNotCompleted = true
+                        if theDDSorPNGFileIsOk == 0 theDDSorPNGFileIsOk = -11 end
+                    end
+                end
+            end
+        else
+            if theDDSorPNGFileIsOk == 0 theDDSorPNGFileIsOk = -12 end
         end
     end
-    return theBatchIsNotCompleted, tileIndex, theDDSFileIsOk, timeElaboration, string(tp[7]) * ".dds","../" * tp[1] * "/" * tp[2], fileSizePNG, fileSizeDDS
+    return theBatchIsNotCompleted, tileIndex, theDDSorPNGFileIsOk, timeElaboration, string(tp[7]) * (format == 0 ? ".png" : ".dds"),"../" * tp[1] * "/" * tp[2], fileSizePNG, fileSizeDDS
 end
 
 
@@ -915,6 +998,9 @@ function parseCommandline()
         "--sexagesimal", "-x"
             help = "Set the sexagesimal unit degree.minutes"
             action = :store_true
+        "--png"
+            help = "Set the only png format files"
+            action = :store_true
         "--icao", "-i"
             help = "ICAO airport code for extract LAT and LON"
             arg_type = String
@@ -947,6 +1033,10 @@ function parseCommandline()
             help = "Path to store the dds images"
             arg_type = String
             default = "fgfs-scenery/photoscenery"
+        "--save"
+            help = "Save the remove files in the specific path"
+            arg_type = String
+            default = nothing
         "--connect"
             help = "IP and port FGFS program, example format: \"127.0.0.1:5000\""
             arg_type = String
@@ -1037,13 +1127,17 @@ function main(args)
     end
 
     isSexagesimalUnit = parsedArgs["sexagesimal"]
+    isPngFileFormatOnly = parsedArgs["png"]
 
     debugLevel = parsedArgs["debug"]
     if debugLevel > 1 @info "parsedArgs:" parsedArgs end
 
+    # Path to save the files remove
+    pathToSave = normpath(parsedArgs["save"])
+
     # Generate the TileDatabase
     println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
-    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = updateFilesListTypeDDS()
+    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = createFilesListTypeDDSandPNG(nothing,pathToSave)
     println("The tiles database has been generated and verified")
     println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
 
@@ -1208,8 +1302,8 @@ function main(args)
                 Threads.@threads for cmg in cmgsExtract(cmgs)
                     threadsActive += 1
                     theBatchIsNotCompleted = false
-                    (theBatchIsNotCompleted,tileIndex,theDDSFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSFile(rootPath,cmg,overWriteTheTiles,imageMagickPath,mapServer,tileDatabase,debugLevel)
-                    if theDDSFileIsOk >= 1
+                    (theBatchIsNotCompleted,tileIndex,theDDSorPNGFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSorPNGFile(rootPath,cmg,overWriteTheTiles,imageMagickPath,mapServer,tileDatabase,isPngFileFormatOnly,pathToSave,debugLevel)
+                    if theDDSorPNGFileIsOk >= 1
                         numbersOfTilesElaborate += 1
                         if timeElaboration != nothing && theBatchIsNotCompleted == false
                             timeElaborationForAllTilesInserted += timeElaboration
@@ -1229,26 +1323,25 @@ function main(args)
                     else
                         numbersOfTilesElaborate += 1
                     end
-                    if theDDSFileIsOk != 0
-                        if theDDSFileIsOk == 1
-                            theDDSFileIsOkStatus = "(Inserted)"
+                    if theDDSorPNGFileIsOk != 0
+                        if theDDSorPNGFileIsOk == 1
                             totalBytePNG += fileSizePNG
                             totalByteDDS += fileSizeDDS
-                        elseif theDDSFileIsOk == 2
+                            theDDSorPNGFileIsOkStatus = "(Inserted)"
+                        elseif theDDSorPNGFileIsOk == 2
                             totalBytePNG += fileSizePNG
                             totalByteDDS += fileSizeDDS
-                            theDDSFileIsOkStatus = "(Updated)   "
-                        elseif theDDSFileIsOk == 3
-                            totalByteDDS += fileSizeDDS
-                            theDDSFileIsOkStatus = "(Copied)   "
-                        elseif theDDSFileIsOk == -1
-                            theDDSFileIsOkStatus = "(Removed)   "
-                        elseif theDDSFileIsOk == -2
-                            theDDSFileIsOkStatus = "(Nothing)   "
-                        elseif theDDSFileIsOk == -3
-                            theDDSFileIsOkStatus = "(Skip)      "
-                        elseif theDDSFileIsOk <= -10
-                            theDDSFileIsOkStatus = "(HTTP! $theDDSFileIsOk) "
+                            theDDSorPNGFileIsOkStatus = "(Updated)   "
+                        elseif theDDSorPNGFileIsOk == 3
+                            theDDSorPNGFileIsOkStatus = "(Copied)   "
+                        elseif theDDSorPNGFileIsOk == -1
+                            theDDSorPNGFileIsOkStatus = "(Removed)   "
+                        elseif theDDSorPNGFileIsOk == -2
+                            theDDSorPNGFileIsOkStatus = "(Nothing)   "
+                        elseif theDDSorPNGFileIsOk == -3
+                            theDDSorPNGFileIsOkStatus = "(Skip)      "
+                        elseif theDDSorPNGFileIsOk <= -10
+                            theDDSorPNGFileIsOkStatus = "(HTTP! $theDDSorPNGFileIsOk) "
                         end
                         timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
                         println('\r',
@@ -1264,9 +1357,9 @@ function main(args)
                             " path: $pathRel/$tile ",
                             @sprintf(" Dist: %5.1f",cmg[11]),
                             @sprintf(" pix: %5d",cmg[12]),
-                            @sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),
-                            @sprintf(" MB dw: %6.1f ",totalByteDDS / 1000000),
-                            theDDSFileIsOkStatus
+                            @sprintf(" MB/s: %3.2f",(totalBytePNG + totalByteDDS) / (time()-timeStart) / 1000000),
+                            @sprintf(" MB dw: %6.1f ",(totalBytePNG + totalByteDDS) / 1000000),
+                            theDDSorPNGFileIsOkStatus
                         )
                     else
                         totalBytePNG += fileSizePNG
