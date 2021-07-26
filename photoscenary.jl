@@ -1133,7 +1133,8 @@ function main(args)
     if debugLevel > 1 @info "parsedArgs:" parsedArgs end
 
     # Path to save the files remove
-    pathToSave = normpath(parsedArgs["save"])
+    pathToSave = parsedArgs["save"]
+    if pathToSave != nothing pathToSave = normpath(pathToSave) end
 
     # Generate the TileDatabase
     println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
