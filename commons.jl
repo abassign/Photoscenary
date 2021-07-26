@@ -95,6 +95,26 @@ function getDDSSize(imageWithPathTypeDDS)
 end
 
 
+
+function getPNGSize(imageWithPathTypePNG)
+    if isfile(imageWithPathTypePNG)
+        try
+            if Base.Sys.iswindows()
+                identify = read(`magick identify $imageWithPathTypePNG`,String)
+            else
+                identify = read(`identify $imageWithPathTypePNG`,String)
+            end
+            a = split(split(identify," ")[3],"x")
+            return true, parse(Int64,a[1]), parse(Int64,a[2])
+        catch
+            return false,0,0
+        end
+    else
+        return false,0,0
+    end
+end
+
+
 function displayCursorTypeA()
     i::Int64 = 1
     ascii = ['\U2190','\U2196','\U2191','\U2197','\U2192','\U2198','\U2193','\U2199']
