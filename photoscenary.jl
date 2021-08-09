@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.3"
-versionProgramDate = "Testing 20210726"
+versionProgram = "0.3.4"
+versionProgramDate = "Testing 20210809"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
