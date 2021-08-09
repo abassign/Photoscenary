@@ -72,7 +72,7 @@ end
 
 function getFileName(filename::String)
     fl = findlast(isequal('.'),filename)
-    return fl != nothing ? filename[1:fl-1] : nothing
+    return fl != nothing ? filename[1:prevind(filename,fl)] : nothing
 end
 
 
