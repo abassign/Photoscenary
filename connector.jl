@@ -64,12 +64,13 @@ mutable struct FGFSPositionRoute
     actualSpeed::Float64
     actualDirectionDeg::Float64
     radiusStep::Float64
+    radiusStepFactor::Float64
     stepTime::Float64
     telnetLastTime::Float64
     telnet::Union{TelnetConnection,Nothing}
 
-    function FGFSPositionRoute(centralPointRadiusDistance)
-        new(Any[],0,nothing,nothing,0.0,0.0,0.0,centralPointRadiusDistance,2.0,0.0,nothing)
+    function FGFSPositionRoute(centralPointRadiusDistance,radiusStepFactor = 0.5)
+        new(Any[],0,nothing,nothing,0.0,0.0,0.0,centralPointRadiusDistance,radiusStepFactor,2.0,0.0,nothing)
     end
 end
 
@@ -159,8 +160,8 @@ function getFGFSPosition(telnet::TelnetConnection, precPosition::Union{FGFSPosit
 end
 
 
-function getFGFSPositionSetTask(ipAddressAndPort::String,centralPointRadiusDistance::Float64,debugLevel::Int)
-    positionRoute = FGFSPositionRoute(centralPointRadiusDistance)
+function getFGFSPositionSetTask(ipAddressAndPort::String,centralPointRadiusDistance::Float64,radiusStepFactor::Float64,debugLevel::Int)
+    positionRoute = FGFSPositionRoute(centralPointRadiusDistance,radiusStepFactor)
     maxRetray = 10
     @async while true
         positionRoute.telnet = setFGFSConnect(TelnetConnection(ipAddressAndPort),debugLevel)
@@ -196,7 +197,7 @@ function getFGFSPositionSetTask(ipAddressAndPort::String,centralPointRadiusDista
                             positionRoute.actualSpeed = 0.0
                         end
                         positionRoute.actualDirectionDeg = Main.Geodesics.azimuth(positionRoute.marks[end].longitudeDeg,positionRoute.marks[end].latitudeDeg,position.longitudeDeg,position.latitudeDeg)
-                        if positionRoute.actualDistance >= (positionRoute.radiusStep * 0.7)
+                        if positionRoute.actualDistance >= (positionRoute.radiusStep * positionRoute.radiusStepFactor)
                             # Speed, radius and direction correction
                             push!(positionRoute.marks,position)
                             positionRoute.size += 1
