@@ -53,7 +53,7 @@ end
 
 using Pkg
 
-if VERSION < v"1.5.0"
+if VERSION < v"1.5.4"
     println("The actiual Julia is ",VERSION, " The current version is too old!\nPlease upgrade Julia to version 1.5.0 but preferably install the 1.6.x or later (exit code 500)")
     ccall(:jl_exit, Cvoid, (Int32,), 500)
 elseif VERSION >= v"1.6.0"
@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.4"
-versionProgramDate = "Testing 20210809"
+versionProgram = "0.3.5"
+versionProgramDate = "Testing 20210816"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -151,12 +151,13 @@ end
 @everywhere using SharedArrays
 
 try
-    include("commons.jl")
-    include("tilesDatabase.jl")
-    include("connector.jl")
-    include("Geodesics.jl")
+    #include("commons.jl")
+    include("./PhotoscenaryCommons.jl")
+    include("./TilesDatabase.jl")
+    include("./connector.jl")
+    include("./Geodesics.jl")
 catch err
-    println("\nError, the commons.jl file or the tilesDatabase.jl file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.\n$err")
+    println("\nError, the PhotoscenaryCommons.jl file or the tilesDatabase.jl file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.\n$err")
     ccall(:jl_exit, Cvoid, (Int32,), 500)
 end
 
@@ -257,9 +258,10 @@ struct MapCoordinates
     latUR::Float64
     lonUR::Float64
     isDeclarePolar::Bool
+    positionRoute::Union{FGFSPositionRoute,Nothing}
 
     function MapCoordinates(lat::Float64,lon::Float64,radius::Float64)
-        (latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(lat,lon,radius)
+        (latLL,lonLL,latUR,lonUR) = PhotoscenaryCommons.latDegByCentralPoint(lat,lon,radius)
         return new(lat,lon,radius,latLL,lonLL,latUR,lonUR,true)
     end
 
@@ -304,7 +306,7 @@ function getSizePixel(size)
 end
 
 
-function getSizePixelWidthByDistance(size,sizeDwn,radius,distance,unCompletedTilesAttemps)
+function getSizePixelWidthByDistance(size,sizeDwn,radius,distance,positionRoute::Union{FGFSPositionRoute,Nothing},unCompletedTilesAttemps)
     if sizeDwn > size sizeDwn = size end
     if unCompletedTilesAttemps > 0
         size = size - unCompletedTilesAttemps
@@ -320,20 +322,26 @@ function getSizePixelWidthByDistance(size,sizeDwn,radius,distance,unCompletedTil
             sizeDwn = 0
         end
     end
-    ## s = Int64(size - round((size-sizeDwn) * distance / radius)) + 1
-    ## if s > size s = size end
-    getSizePixel(Int64(size - round((size-sizeDwn) * distance / radius)))
+    positionRoute.actual == nothing ? altitudeNm = 0.0 : altitudeNm = positionRoute.actual.altitudeFt * 0.000164579
+    sizePixelFound = Int64(size - round((size-sizeDwn) * sqrt(distance^2 + altitudeNm^3.0) * 1.5 / radius))
+    if sizePixelFound > size
+        return getSizePixel(size)
+    elseif sizePixelFound < sizeDwn
+        return getSizePixel(sizeDwn)
+    else
+        return getSizePixel(sizePixelFound)
+    end
 end
 
 
 # Coordinates matrix generator
-function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size,sizeDwn,unCompletedTilesAttemps,isDebug)
+function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size,sizeDwn,unCompletedTilesAttemps,positionRoute::Union{FGFSPositionRoute,Nothing},isDebug)
     numberOfTiles = 0
     # Normalization to 0.125 deg
     latLL = m.latLL - mod(m.latLL,0.125)
     latUR = m.latUR - mod(m.latUR,0.125) + 0.125
-    lonLL = m.lonLL - mod(m.lonLL,tileWidth(m.lat))
-    lonUR = m.lonUR - mod(m.lonUR,tileWidth(m.lat)) + tileWidth(m.lat)
+    lonLL = m.lonLL - mod(m.lonLL,PhotoscenaryCommons.tileWidth(m.lat))
+    lonUR = m.lonUR - mod(m.lonUR,PhotoscenaryCommons.tileWidth(m.lat)) + PhotoscenaryCommons.tileWidth(m.lat)
     a = [(
             string(lon >= 0.0 ? "e" : "w", lon >= 0.0 ? @sprintf("%03d",floor(abs(lon),digits=-1)) : @sprintf("%03d",ceil(abs(lon),digits=-1)),
                 lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(abs(lat),digits=-1)) : @sprintf("%02d",ceil(abs(lat),digits=-1))),
@@ -341,16 +349,16 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
                 lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(Int,abs(lat))) : @sprintf("%02d",ceil(Int,abs(lat)))),
             lon,
             lat,
-            lon + tileWidth(lat),
+            lon + PhotoscenaryCommons.tileWidth(lat),
             lat + 0.125,
             floor(Int,lat*10),
-            index(lat,lon),
-            x(lat,lon),
-            y(lat),
-            tileWidth(lat),
-            round(euclidean_distance(LLA(lat + (0.125/2.0),lon + tileWidth(lat)/2.0,0.0),LLA(m.lat,m.lon, 0.0)) / 1852.0 / 2.0,digits=3)
+            PhotoscenaryCommons.index(lat,lon),
+            PhotoscenaryCommons.x(lat,lon),
+            PhotoscenaryCommons.y(lat),
+            PhotoscenaryCommons.tileWidth(lat),
+            round(euclidean_distance(LLA(lat + (0.125/2.0),lon + PhotoscenaryCommons.tileWidth(lat)/2.0,0.0),LLA(m.lat,m.lon, 0.0)) / 1852.0 / 2.0,digits=3)
         )
-        for lat in latLL:0.125:latUR for lon in lonLL:tileWidth(lat):lonUR]
+        for lat in latLL:0.125:latUR for lon in lonLL:PhotoscenaryCommons.tileWidth(lat):lonUR]
     # print data sort by tile index
     ## aSort = sort!(a,by = x -> x[8])
     # Sort by center distance
@@ -369,7 +377,7 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
             else
                 counterIndex += 1
             end
-            (widthByDistance,colsByDistance) = getSizePixelWidthByDistance(size,sizeDwn,m.radius,b[12],unCompletedTilesAttemps)
+            (widthByDistance,colsByDistance) = getSizePixelWidthByDistance(size,sizeDwn,m.radius,b[12],positionRoute,unCompletedTilesAttemps)
             t = (b[1],b[2],b[3],b[5],b[4],b[6],b[8],counterIndex,b[11],0,b[12],widthByDistance,colsByDistance)
             push!(c,t)
             push!(c,0)
@@ -740,7 +748,7 @@ function downloadImages(tp,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
     latUR = tp[6]
     cols = tp[13]
     sizeWidth = tp[12]
-    sizeHight = Int(sizeWidth / (8 * tileWidth((latUR + latLL) / 2.0)))
+    sizeHight = Int(sizeWidth / (8 * PhotoscenaryCommons.tileWidth((latUR + latLL) / 2.0)))
     #imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
     imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
     downloadPNGIsCompleteNumber = 0
@@ -801,22 +809,22 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
         imageWithPathTypeDDS = normpath(path * "/" * string(tileIndex) * ".dds")
         # Check the image is present
         if isPngFileFormatOnly
-            if isfile(imageWithPathTypeDDS) moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
+            if isfile(imageWithPathTypeDDS) TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
             dataFileImagePNG = getPNGSize(imageWithPathTypePNG)
             if dataFileImagePNG[1]
                 if overWriteTheTiles >= 9
-                    moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                    TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
                     theDDSorPNGFileIsOk = -1
                 elseif overWriteTheTiles == 2 || dataFileImagePNG[2] < 512 || dataFileImagePNG[2] > 32768
                     createDDSorPNGFile = true
-                    moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                    TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
                 elseif overWriteTheTiles == 1 && tp[12] > dataFileImagePNG[2]
                     createDDSorPNGFile = true
                 else
                     theDDSorPNGFileIsOk = -3
                 end
             else
-                if isfile(imageWithPathTypePNG) moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave) end
+                if isfile(imageWithPathTypePNG) TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave) end
                 if overWriteTheTiles < 9
                     createDDSorPNGFile = true
                 else
@@ -824,11 +832,11 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
                 end
             end
         else
-            dataFileImageDDS = getDDSSize(imageWithPathTypeDDS)
-            dataFileImagePNG = getPNGSize(imageWithPathTypePNG)
+            dataFileImageDDS = PhotoscenaryCommons.getDDSSize(imageWithPathTypeDDS)
+            dataFileImagePNG = PhotoscenaryCommons.getPNGSize(imageWithPathTypePNG)
             if dataFileImageDDS[1]
                 if overWriteTheTiles >= 9
-                    moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                    TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
                     theDDSorPNGFileIsOk = -1
                 elseif overWriteTheTiles == 2 || dataFileImageDDS[2] < 512 || dataFileImageDDS[2] > 32768
                     createDDSorPNGFile = true
@@ -840,22 +848,22 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
             else
                 if dataFileImagePNG[1]
                     if overWriteTheTiles >= 9
-                        moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                        TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
                         theDDSorPNGFileIsOk = -1
                     elseif overWriteTheTiles == 2 || dataFileImagePNG[2] < 512 || dataFileImagePNG[2] > 32768
                         isfileImagePNG = false
-                        moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                        TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
                         createDDSorPNGFile = true
                     elseif overWriteTheTiles == 1 && tp[12] >= dataFileImagePNG[2]
                         isfileImagePNG = true
                         createDDSorPNGFile = true
                     else
                         isfileImagePNG = false
-                        moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                        TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
                         createDDSorPNGFile = true
                     end
                 else
-                    if isfile(imageWithPathTypeDDS) moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
+                    if isfile(imageWithPathTypeDDS) TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
                     if overWriteTheTiles < 9
                         createDDSorPNGFile = true
                     else
@@ -867,8 +875,8 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
         if createDDSorPNGFile
             # Check if there is a file somewhere that could be used as DDS
             if !isfileImagePNG
-                moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
-                (foundIndex,foundPath,toPath,isSkip) = copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath,format)
+                TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                (foundIndex,foundPath,toPath,isSkip) = TilesDatabase.copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath,format)
                 if debugLevel > 0 println("createDDSorPNGFile - copyTilesByIndex foundIndex: $foundIndex | foundPath: $foundPath | toPath: $toPath | tileDatabase: $tileDatabase | tileIndex: $tileIndex | tp[12]: $(tp[12])") end
             else
                 foundIndex = nothing
@@ -887,8 +895,8 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
             else
                 # The DDS or PNG file was not found, so it must be obtained from an external site
                 if !isfileImagePNG
-                    moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
-                    moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                    TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
+                    TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
                     isfileImagePNG = downloadImages(tp,imageWithPathTypePNG,mapServer,debugLevel) > 0
                 end
                 if isPngFileFormatOnly
@@ -922,7 +930,7 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
                             # Compression factor (16K -> 64 MB): -define dds:mipmaps=0 -define dds:compression=dxt1
                             # Compression factor (16K -> 128 MB): -define dds:mipmaps=0 -define dds:compression=dxt5
                             oldFileIsPresent = isfile(imageWithPathTypeDDS)
-                            moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                            TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
                             fileSizePNG = stat(imageWithPathTypePNG).size
                             if Base.Sys.iswindows()
                                 run(`magick convert $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
@@ -933,7 +941,6 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
                             fileSizeDDS = stat(imageWithPathTypeDDS).size
                             if debugLevel > 0 println("createDDSorPNGFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
                             rm(imageWithPathTypePNG)
-                            fileSizePNG = 0
                             theBatchIsNotCompleted = false
                             oldFileIsPresent ? theDDSorPNGFileIsOk = 2 : theDDSorPNGFileIsOk = 1
                             timeElaboration = time() - t0
@@ -1103,7 +1110,7 @@ function main(args)
     routeListStep = 1
     routeListSize = 0
     positionRoute = nothing
-    arrow = displayCursorTypeA()
+    arrow = PhotoscenaryCommons.displayCursorTypeA()
     timeLastConnect = time()
 
     imageMagickPath = inizialize()
@@ -1138,7 +1145,7 @@ function main(args)
 
     # Generate the TileDatabase
     println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
-    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = createFilesListTypeDDSandPNG(nothing,pathToSave)
+    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = TilesDatabase.createFilesListTypeDDSandPNG(nothing,pathToSave)
     println("The tiles database has been generated and verified")
     println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
 
@@ -1181,7 +1188,7 @@ function main(args)
         @sync begin
             println("\nTry to Flightgear connect with address: $connectIp radius: $centralPointRadiusDistance")
             @async while !findPosition
-                if positionRoute == nothing positionRoute = getFGFSPositionSetTask(connectIp,centralPointRadiusDistance,debugLevel) end
+                if positionRoute == nothing positionRoute = getFGFSPositionSetTask(connectIp,centralPointRadiusDistance,0.5,debugLevel) end
                 if positionRoute.size > 0
                     routeListSize += 1
                     routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
@@ -1249,7 +1256,6 @@ function main(args)
         end
 
         if systemCoordinatesIsPolar
-            ##(latLL,lonLL,latUR,lonUR) = latDegByCentralPoint(routeList[routeListStep][1],routeList[routeListStep][2],centralPointRadiusDistance)
             if !(inValue(routeList[routeListStep][1],90) && inValue(routeList[routeListStep][2],180))
                 println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlat: $(routeList[routeListStep][1]) lon: $(routeList[routeListStep][2])")
                 ccall(:jl_exit, Cvoid, (Int32,), 505)
@@ -1280,10 +1286,10 @@ function main(args)
             # Generate the coordinate matrix
             # Resize management with smaller dimensions
             if ifFristCycle
-                (cmgs,cmgsSize) = coordinateMatrixGenerator(mpc,nothing,size,sizeDwn,unCompletedTilesAttemps,debugLevel)
+                (cmgs,cmgsSize) = coordinateMatrixGenerator(mpc,nothing,size,sizeDwn,unCompletedTilesAttemps,positionRoute,debugLevel)
                 numbersOfTilesToElaborate = cmgsSize
             else
-                (cmgs,cmgsSize) = coordinateMatrixGenerator(mpc,unCompletedTiles,size,sizeDwn,unCompletedTilesAttemps,debugLevel)
+                (cmgs,cmgsSize) = coordinateMatrixGenerator(mpc,unCompletedTiles,size,sizeDwn,unCompletedTilesAttemps,positionRoute,debugLevel)
                 numbersOfTilesToElaborate = cmgsSize
             end
 
@@ -1358,8 +1364,8 @@ function main(args)
                             " path: $pathRel/$tile ",
                             @sprintf(" Dist: %5.1f",cmg[11]),
                             @sprintf(" pix: %5d",cmg[12]),
-                            @sprintf(" MB/s: %3.2f",(totalBytePNG + totalByteDDS) / (time()-timeStart) / 1000000),
-                            @sprintf(" MB dw: %6.1f ",(totalBytePNG + totalByteDDS) / 1000000),
+                            @sprintf(" MB/s: %3.2f",totalBytePNG / (time()-timeStart) / 1000000),
+                            @sprintf(" MB dw: %6.1f ",totalBytePNG / 1000000),
                             theDDSorPNGFileIsOkStatus
                         )
                     else
@@ -1423,3 +1429,4 @@ function main(args)
 end
 
 main(ARGS)
+
