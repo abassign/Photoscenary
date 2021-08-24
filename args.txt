@@ -1,0 +1,14 @@
+--path
+/media/abassign/test/fgfs-scenery/photoscenery
+--save
+/media/abassign/save_2018/Salvataggi/Immagini
+--connect
+127.0.0.1:5000
+-s
+4
+-r
+20
+--over
+1
+--sdwn
+1
