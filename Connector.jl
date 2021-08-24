@@ -129,6 +129,7 @@ function getFGFSPosition(telnet::TelnetConnection, precPosition::Union{FGFSPosit
     try
         retray = 1
         while telnetConnectionSockIsOpen(telnet) && retray <= 3
+            #getFloatParams(telnet,"/position/altitude-agl-ft",debugLevel)
             write(telnet.sock,string("dump /position","\r\n"))
             sleep(0.5)
             if size(telnet.telnetData)[1] >= 8
@@ -138,6 +139,7 @@ function getFGFSPosition(telnet::TelnetConnection, precPosition::Union{FGFSPosit
                     lat = Base.parse(Float64,EzXML.nodecontent.(findall("//latitude-deg",primates))[1])
                     lon = Base.parse(Float64,EzXML.nodecontent.(findall("//longitude-deg",primates))[1])
                     alt = Base.parse(Float64,EzXML.nodecontent.(findall("//altitude-ft",primates))[1])
+                    alt = alt - Base.parse(Float64,EzXML.nodecontent.(findall("//ground-elev-ft",primates))[1])
                     if precPosition == nothing
                         position = FGFSPosition(lat,lon,alt)
                     else

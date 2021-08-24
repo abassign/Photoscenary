@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.6"
-versionProgramDate = "Testing 20210823"
+versionProgram = "0.3.7"
+versionProgramDate = "Testing 20210824"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -327,7 +327,7 @@ function getSizePixelWidthByDistance(size,sizeDwn,radius,distance,positionRoute:
     else
         altitudeNm = 0.0
     end
-    sizePixelFound = Int64(size - round((size-sizeDwn) * sqrt(distance^2 + altitudeNm^3.0) * 1.5 / radius))
+    sizePixelFound = Int64(round(size - (size-sizeDwn) * sqrt(distance^2.0 + altitudeNm^2.0) * 1.0 / radius))
     if sizePixelFound > size
         return getSizePixel(size)
     elseif sizePixelFound < sizeDwn
