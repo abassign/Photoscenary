@@ -6,7 +6,7 @@ module TilesDatabase
     using Printf
     using Parsers
 
-    include("./PhotoscenaryCommons.jl")
+    include("./Commons.jl")
     include("./ScanDir.jl")
 
     struct TailCoordinates
@@ -203,7 +203,7 @@ module TilesDatabase
                                 end
                             end
                         end
-                        print("\rExecute update images files, find n. $(rowsNumber) DDS files: $DDSFileNumber PNG files: $PNGFileNumber with size: $(filesSize/1000000.0) Mb")
+                        print("\rExecute update images files, find n. $(rowsNumber) DDS files: $DDSFileNumber PNG files: $PNGFileNumber with size: $(trunc(Int,filesSize/1000000.0)) Mb ")
                     end
                 else
                     print("\nError: not found the root path: $path")

@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.5"
-versionProgramDate = "Testing 20210816"
+versionProgram = "0.3.6"
+versionProgramDate = "Testing 20210823"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -152,9 +152,9 @@ end
 
 try
     #include("commons.jl")
-    include("./PhotoscenaryCommons.jl")
+    include("./Commons.jl")
     include("./TilesDatabase.jl")
-    include("./connector.jl")
+    include("./Connector.jl")
     include("./Geodesics.jl")
 catch err
     println("\nError, the PhotoscenaryCommons.jl file or the tilesDatabase.jl file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.\n$err")
@@ -322,7 +322,11 @@ function getSizePixelWidthByDistance(size,sizeDwn,radius,distance,positionRoute:
             sizeDwn = 0
         end
     end
-    positionRoute.actual == nothing ? altitudeNm = 0.0 : altitudeNm = positionRoute.actual.altitudeFt * 0.000164579
+    if positionRoute != nothing
+        positionRoute.actual == nothing ? altitudeNm = 0.0 : altitudeNm = positionRoute.actual.altitudeFt * 0.000164579
+    else
+        altitudeNm = 0.0
+    end
     sizePixelFound = Int64(size - round((size-sizeDwn) * sqrt(distance^2 + altitudeNm^3.0) * 1.5 / radius))
     if sizePixelFound > size
         return getSizePixel(size)
@@ -970,10 +974,29 @@ end
 
 # Main fuctions area
 
-function parseCommandline()
-    s = ArgParseSettings()
+function parseCommandline(args)
 
+    if args != nothing && size(args)[1] == 1
+        try
+            outfile = args[1]
+            f = open(outfile,"r")
+            args = String[]
+            while ! eof(f)
+                line = readline(f)
+                if length(line) > 0 push!(args,line) end
+            end
+            parsed_args = parse_args(args,s)
+            println("\nArguments (params) read from the file: $outfile")
+        catch
+        end
+    end
+
+    s = ArgParseSettings()
     @add_arg_table! s begin
+        "--args", "-g"
+            help = "The arguments files in txt format"
+            arg_type = String
+            default = nothing
         "--map"
             help = "The map server id"
             arg_type = Int64
@@ -1064,7 +1087,41 @@ function parseCommandline()
             action = :store_true
     end
 
-    return parse_args(s)
+    parsed_args = parse_args(args,s)
+
+    outfile = parsed_args["args"]
+
+    if size(args)[1] == 0 || (size(args)[1] == 2 && outfile != nothing)
+        try
+            if outfile == nothing outfile = "args.txt" end
+            f = open(outfile,"r")
+            args = String[]
+            while ! eof(f)
+                line = readline(f)
+                if length(line) > 0 push!(args,line) end
+            end
+            parsed_args = parse_args(args,s)
+            println("\nArguments (params) read from the file: $outfile")
+        catch
+            println("\nArguments (params) default arguments")
+        end
+    else
+        try
+            if outfile == nothing outfile = "args.txt" end
+            f = open(outfile, "w")
+            for i in eachindex(args)
+                println(f, args[i])
+            end
+            println("\nArguments (params) saved in the file: $outfile")
+        catch
+        end
+    end
+
+    for pa in parsed_args
+        println("  $(pa[1])  =>  $(pa[2])")
+    end
+
+    return parsed_args
 end
 
 
@@ -1120,7 +1177,7 @@ function main(args)
         ccall(:jl_exit, Cvoid, (Int32,), 501)
     end
 
-    parsedArgs = parseCommandline()
+    parsedArgs = parseCommandline(args)
 
     if parsedArgs["version"] return 0 end
 
