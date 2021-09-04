@@ -1,5 +1,3 @@
---path
-/media/abassign/test/fgfs-scenery/photoscenery
 --save
 /media/abassign/save_2018/Salvataggi/Immagini
 --connect
@@ -12,3 +10,5 @@
 1
 --sdwn
 1
+-d
+0

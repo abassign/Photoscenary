@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.7"
-versionProgramDate = "Testing 20210824"
+versionProgram = "0.3.8"
+versionProgramDate = "Testing 20210901"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -104,6 +104,7 @@ begin
         using Parsers
         using Sockets
         using EzXML
+        using ThreadSafeDicts
     catch
         if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
     end
@@ -134,6 +135,7 @@ begin
             Pkg.add("Parsers")
             Pkg.add("Sockets")
             Pkg.add("EzXML")
+            Pkg.add("ThreadSafeDicts")
             println("\nThe Julia system has been updated")
         end
     catch err
@@ -362,10 +364,9 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
             PhotoscenaryCommons.tileWidth(lat),
             round(euclidean_distance(LLA(lat + (0.125/2.0),lon + PhotoscenaryCommons.tileWidth(lat)/2.0,0.0),LLA(m.lat,m.lon, 0.0)) / 1852.0 / 2.0,digits=3)
         )
-        for lat in latLL:0.125:latUR for lon in lonLL:PhotoscenaryCommons.tileWidth(lat):lonUR]
+        for lat in latLL:0.125:latUR for lon in lonLL:PhotoscenaryCommons.tileWidth(lat):lonUR
+    ]
     # print data sort by tile index
-    ## aSort = sort!(a,by = x -> x[8])
-    # Sort by center distance
     aSort = sort!(a,by = x -> x[12])
     c = nothing
     d = []
@@ -1062,11 +1063,15 @@ function parseCommandline(args)
         "--path", "-p"
             help = "Path to store the dds images"
             arg_type = String
-            default = "fgfs-scenery/photoscenery"
+            #default = "fgfs-scenery/photoscenery"
+            default = "*"
         "--save"
             help = "Save the remove files in the specific path"
             arg_type = String
             default = nothing
+        "--nosave"
+            help = "Not save the DDS/PNG files"
+            action = :store_true
         "--connect"
             help = "IP and port FGFS program, example format: \"127.0.0.1:5000\""
             arg_type = String
@@ -1159,7 +1164,7 @@ inValue(value,extrem) = abs(value) <= extrem
 setDegreeUnit(isSexagesimal,degree) = isSexagesimal ? trunc(degree) + (degree - trunc(degree)) * (10.0/6.0) : degree
 
 
-function main(args)
+function photoscenary(args)
 
     centralPointLon = nothing
     centralPointLat = nothing
@@ -1167,6 +1172,7 @@ function main(args)
     routeListStep = 1
     routeListSize = 0
     positionRoute = nothing
+    rootPath = nothing
     arrow = PhotoscenaryCommons.displayCursorTypeA()
     timeLastConnect = time()
 
@@ -1195,16 +1201,6 @@ function main(args)
 
     debugLevel = parsedArgs["debug"]
     if debugLevel > 1 @info "parsedArgs:" parsedArgs end
-
-    # Path to save the files remove
-    pathToSave = parsedArgs["save"]
-    if pathToSave != nothing pathToSave = normpath(pathToSave) end
-
-    # Generate the TileDatabase
-    println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
-    tileDatabase,tileDatabaseNumberRows,tileDatabaseSize = TilesDatabase.createFilesListTypeDDSandPNG(nothing,pathToSave)
-    println("The tiles database has been generated and verified")
-    println("Found $tileDatabaseNumberRows .DDS tiles. The overall size of the files is: $(round((tileDatabaseSize/1000000),digits=2)) MB")
 
     # Process anothers options
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
@@ -1242,21 +1238,30 @@ function main(args)
         # The route is built in connection with the aircraft
         # It waits for a small amount of time to connect to the server
         findPosition = false
-        @sync begin
-            println("\nTry to Flightgear connect with address: $connectIp radius: $centralPointRadiusDistance")
-            @async while !findPosition
-                if positionRoute == nothing positionRoute = getFGFSPositionSetTask(connectIp,centralPointRadiusDistance,0.5,debugLevel) end
-                if positionRoute.size > 0
-                    routeListSize += 1
-                    routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
-                    println("\nConnected to Flightgear with address: $connectIp radius: $centralPointRadiusDistance")
-                    findPosition = true
+            @sync begin
+                println("\nTry to Flightgear connect with address: $connectIp radius: $centralPointRadiusDistance")
+                pathFromParsed = parsedArgs["path"]
+                if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 0
+                    defaultRootPath = getFGFSPathScenery(connectIp,debugLevel)
                 else
-                   print("\r$(arrow.get()) Try the frist connection to Flightgear with address: $connectIp waiting time: $(Int(round(time()-timeLastConnect))). Press CTRL+C to stop the program and exit")
-                   sleep(positionRoute.stepTime)
+                    defaultRootPath = nothing
+                end
+                @async while !findPosition
+                    if positionRoute == nothing positionRoute = getFGFSPositionSetTask(connectIp,centralPointRadiusDistance,0.3,debugLevel) end
+                    if positionRoute.size > 0
+                        routeListSize += 1
+                        routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
+                        findPosition = true
+                        if defaultRootPath != nothing
+                            rootPath = normpath(defaultRootPath * "/Orthophotos")
+                        end
+                        println("\nConnected to Flightgear with address: $connectIp radius: $centralPointRadiusDistance path: '$(rootPath)'")
+                    else
+                        print("\r$(arrow.get()) Try the frist connection to Flightgear with address: $connectIp waiting time: $(Int(round(time()-timeLastConnect))). Press CTRL+C to stop the program and exit")
+                        sleep(positionRoute.stepTime)
+                    end
                 end
             end
-        end
     else
         centralPointLat = setDegreeUnit(isSexagesimalUnit,parsedArgs["lat"])
         centralPointLon = setDegreeUnit(isSexagesimalUnit,parsedArgs["lon"])
@@ -1282,22 +1287,49 @@ function main(args)
     if sizeDwn == 0 sizeDwn = size end
 
     # Path prepare
-    pathToTest = normpath(parsedArgs["path"])
-    if Base.Sys.iswindows()
-        if pathToTest[2] == ':' || pathToTest[1] == '\\'
-            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
+    pathFromParsed = parsedArgs["path"]
+    pathToTest = normpath(pathFromParsed)
+    if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 0
+        # The first asterisk character indicates that the path has not been changed and therefore it is possible to insert the default one
+        pathFromParsed = "fgfs-scenery/photoscenery"
+    end
+    if rootPath == nothing
+        if Base.Sys.iswindows()
+            if pathToTest[2] == ':' || pathToTest[1] == '\\'
+                rootPath = normpath(pathFromParsed * "/Orthophotos")
+            else
+                cd();
+                rootPath = normpath(pwd() * "/" * pathFromParsed * "/Orthophotos")
+            end
         else
-            cd();
-            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
-        end
-    else
-        if pathToTest[1] == '/'
-            rootPath = normpath(parsedArgs["path"] * "/Orthophotos")
-        else
-            cd();
-            rootPath = normpath(pwd() * "/" * parsedArgs["path"] * "/Orthophotos")
+            if pathToTest[1] == '/'
+                rootPath = normpath(pathFromParsed * "/Orthophotos")
+            else
+                cd();
+                rootPath = normpath(pwd() * "/" * pathFromParsed * "/Orthophotos")
+            end
         end
     end
+    println("\nPath to locate the DDS/PNG orthophotos files: '$(rootPath)'")
+
+    # Path to save the files remove
+    isNoSaveFiles = parsedArgs["nosave"]
+    pathToSave = parsedArgs["save"]
+    if pathToSave != nothing
+        isNoSaveFiles = false
+        pathToSave = normpath(pathToSave)
+    else
+        if isNoSaveFiles == false && (parsedArgs["connect"] != nothing || parsedArgs["route"] != nothing)
+            # The autosave mode is only active if the program is connected to FGFS or if it is following a route
+            pathToSave = rootPath * "-saved"
+        end
+    end
+    println("\nPath to save the DDS/PNG orthophotos files: '$(pathToSave)'")
+
+    # Generate the TileDatabase
+    println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
+    tileDatabase = TilesDatabase.createFilesListTypeDDSandPNG(nothing,rootPath,pathToSave)
+    println("The tiles database has been generated and verified")
 
     # Download thread
     timeElaborationForAllTilesInserted = 0.0
@@ -1484,6 +1516,31 @@ function main(args)
     end
 
 end
+
+
+function main(args)
+    println("The Photoscenary.jl program has started, it can be stopped with CTRL-C")
+    Base.exit_on_sigint(false)
+    startPhotoscenary = false
+    goProgram = true
+    while goProgram
+        try
+            if !startPhotoscenary
+                @async begin
+                    photoscenary(args)
+                end
+                startPhotoscenary = true
+            end
+            sleep(1.0)
+        catch err
+            if err isa InterruptException
+                goProgram = false
+                print("\rThe Photoscenary.jl program was stopped by the user\n\n")
+            end
+        end
+    end
+end
+
 
 main(ARGS)
 

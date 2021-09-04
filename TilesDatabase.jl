@@ -5,6 +5,8 @@ module TilesDatabase
     using JuliaDB
     using Printf
     using Parsers
+    using Distributed
+    using ThreadSafeDicts
 
     include("./Commons.jl")
     include("./ScanDir.jl")
@@ -39,6 +41,7 @@ module TilesDatabase
         filesFound::Union{Array{TailData},Nothing}
         coordinates::Union{TailCoordinates,Nothing}
         timeLastScan::Float64
+        dlock::Threads.SpinLock
         function TailGroupByIndex() new(0,Any[],nothing,0.0) end
     end
 
@@ -155,63 +158,81 @@ module TilesDatabase
     end
 
 
-    function createFilesListTypeDDSandPNG(pathSearch::Union{String,Nothing} = nothing, pathSave::Union{String,Nothing} = nothing)
+    function scanTailGroupByIndex(path)
+    end
+
+
+    function createFilesListTypeDDSandPNG(pathSearch::Union{String,Nothing} = nothing, rootPath::Union{String,Nothing} = nothing, pathSave::Union{String,Nothing} = nothing)
         if pathSearch == nothing pathSearch = homedir() end
         if pathSave != nothing && occursin(pathSearch, pathSave) pathSave = nothing end
-        tilesFiles = Dict{Int64,TailGroupByIndex}()
+        if rootPath != nothing && occursin(pathSearch, rootPath) rootPath = nothing end
         rowsNumber = 0
         DDSFileNumber = 0
         PNGFileNumber = 0
         filesSize = 0
         cde = countDirError()
-        for path in (pathSearch,pathSave)
+        timeStart = time()
+        tilesFiles = ThreadSafeDict{Int64,TailGroupByIndex}()
+        lockTh = Threads.ReentrantLock()
+        for path in (pathSearch,rootPath,pathSave)
             if path != nothing
-                println("Search DDS/PNG files in path: $path)")
+                println("\nSearch and test the DDS/PNG files in path: $path")
                 if ispath(path)
                     for (root, dirs, files) in ScanDir.walkdir(path; onerror = e->(cde.add(e)))
-                        for file in files
-                            fe = PhotoscenaryCommons.getFileExtension(file)
-                            if fe != nothing && (uppercase(fe) == ".DDS" || uppercase(fe) == ".PNG")
-                                index = Parsers.tryparse(Int,PhotoscenaryCommons.getFileName(file))
-                                if index != nothing
-                                    cfi = PhotoscenaryCommons.coordFromIndex(index)
-                                    slash = "/"
-                                    if Base.Sys.iswindows() slash = "\\" end
-                                    if uppercase(fe) == ".DDS"
-                                        format = 1
-                                        fileWithPath = cfi[7] * slash * cfi[8] * slash * string(index) * ".dds"
-                                    else
-                                        format = 0
-                                        fileWithPath = cfi[7] * slash * cfi[8] * slash * string(index) * ".png"
-                                    end
-                                    jp = joinpath(root, file)
-                                    if findlast(fileWithPath,jp) != nothing
-                                        if format == 1
-                                            (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getDDSSize(jp)
+                        @sync begin
+                            Threads.@threads for file in files
+                                fe = PhotoscenaryCommons.getFileExtension(file)
+                                if fe != nothing && (uppercase(fe) == ".DDS" || uppercase(fe) == ".PNG")
+                                    index = Parsers.tryparse(Int,PhotoscenaryCommons.getFileName(file))
+                                    if index != nothing
+                                        cfi = PhotoscenaryCommons.coordFromIndex(index)
+                                        slash = "/"
+                                        if Base.Sys.iswindows() slash = "\\" end
+                                        if uppercase(fe) == ".DDS"
+                                            format = 1
+                                            fileWithPath = cfi[7] * slash * cfi[8] * slash * string(index) * ".dds"
                                         else
-                                            (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getPNGSize(jp)
+                                            format = 0
+                                            fileWithPath = cfi[7] * slash * cfi[8] * slash * string(index) * ".png"
                                         end
-                                        if isCorrect
-                                            td = TailData(jp,file,stat(jp).mtime,stat(jp).size,pixelSizeW,pixelSizeH,format)
-                                            if !haskey(tilesFiles,index) tilesFiles[index] = TailGroupByIndex() end
-                                            tailGroupByIndexInsert!(tilesFiles[index],index,td)
-                                            rowsNumber += 1
-                                            format == 1 ? DDSFileNumber += 1 : PNGFileNumber += 1
-                                            filesSize += stat(jp).size
+                                        jp = joinpath(root, file)
+                                        if findlast(fileWithPath,jp) != nothing
+                                            if format == 1
+                                                (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getDDSSize(jp)
+                                            else
+                                                (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getPNGSize(jp)
+                                            end
+                                            if isCorrect
+                                                td = TailData(jp,file,stat(jp).mtime,stat(jp).size,pixelSizeW,pixelSizeH,format)
+                                                if !haskey(tilesFiles,index) tilesFiles[index] = TailGroupByIndex() end
+                                                tailGroupByIndexInsert!(tilesFiles[index],index,td)
+                                                Threads.lock(lockTh)
+                                                try
+                                                    rowsNumber += 1
+                                                    format == 1 ? DDSFileNumber += 1 : PNGFileNumber += 1
+                                                    filesSize += stat(jp).size
+                                                finally
+                                                    Threads.unlock(lockTh)
+                                                end
+                                            else
+                                                if isfile(jp) rm(jp) end
+                                            end
                                         end
                                     end
                                 end
                             end
                         end
-                        print("\rExecute update images files, find n. $(rowsNumber) DDS files: $DDSFileNumber PNG files: $PNGFileNumber with size: $(trunc(Int,filesSize/1000000.0)) Mb ")
+                        ts = @sprintf("Time: %02.1f",time() - timeStart)
+                        print("\rExecute update images files, find n. $(rowsNumber) DDS files: $DDSFileNumber PNG files: $PNGFileNumber with size: $(trunc(Int,filesSize/1000000.0)) Mb $ts")
                     end
                 else
                     print("\nError: not found the root path: $path")
                 end
             end
         end
+
         println("\nTerm update DDS/PNG list files: find n. $(cde.get()) dir with errors")
-        return JuliaDB.table(collect(tilesFiles);pkey=1),rowsNumber,filesSize
+        return JuliaDB.table(collect(tilesFiles);pkey=1)
     end
 
 end
