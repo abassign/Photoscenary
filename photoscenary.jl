@@ -1319,7 +1319,7 @@ function photoscenary(args)
         isNoSaveFiles = false
         pathToSave = normpath(pathToSave)
     else
-        if isNoSaveFiles == false && (parsedArgs["connect"] != nothing || parsedArgs["route"] != nothing)
+        if isNoSaveFiles == false
             # The autosave mode is only active if the program is connected to FGFS or if it is following a route
             pathToSave = rootPath * "-saved"
         end
