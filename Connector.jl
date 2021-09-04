@@ -12,7 +12,6 @@ using EzXML
 using Dates
 #using Geodesy
 
-
 mutable struct TelnetConnection
     ipAddress::IPv4
     ipPort::Int
@@ -123,13 +122,46 @@ function setFGFSConnect(telnet::TelnetConnection,debugLevel::Int)
 end
 
 
+function getFGFSValues(s::String,typeOfdata::Char)
+    try
+        if typeOfdata == 's'
+            a = split(s,"=")
+            return split(a[2],"'")[2]
+        end
+    catch
+    end
+    return nothing
+end
+
+
+function getFGFSPathScenery(ipAddressAndPort,debugLevel::Int)
+    try
+        retray = 1
+        telnet = setFGFSConnect(TelnetConnection(ipAddressAndPort),debugLevel)
+        sleep(0.5)
+        while telnetConnectionSockIsOpen(telnet) && retray <= 10
+            sleep(0.1)
+            if retray == 1 write(telnet.sock,string("get /sim/fg-scenery","\r\n")) end
+            if size(telnet.telnetData)[1] > 0
+                return getFGFSValues(telnet.telnetData[1],'s')
+            end
+            retray += 1
+        end
+        debugLevel > 1 && println("\ngetFGFSPathScenery - Sockets is close")
+        return nothing
+    catch err
+        debugLevel > 1 && println("\ngetFGFSPathScenery - Error connection: $err")
+        return nothing
+    end
+end
+
+
 function getFGFSPosition(telnet::TelnetConnection, precPosition::Union{FGFSPosition,Nothing},debugLevel::Int)
     telnetDataXML = ""
     telnet.telnetData = Any[]
     try
         retray = 1
         while telnetConnectionSockIsOpen(telnet) && retray <= 3
-            #getFloatParams(telnet,"/position/altitude-agl-ft",debugLevel)
             write(telnet.sock,string("dump /position","\r\n"))
             sleep(0.5)
             if size(telnet.telnetData)[1] >= 8

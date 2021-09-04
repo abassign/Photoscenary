@@ -20,3 +20,29 @@ The function has been changed connector.getFGFSPositionSetTask introducing the r
 
 These changes allow to have a dynamic management of the images of the tiles during the flight and works well up to mach 0.9 with a fast ADSL connection (20 Mbit / s)
 
+## 0.3.8 date 20210902
+
+### Automatic path
+The automatic path completion has been inserted if the program is connected to FGFS with the --connect parameter.
+The path will be the one described in the parameter:
+/sim/fg-scenery
+
+### Autosave mode
+The autosave mode is only active if the program is connected to FGFS or if it is following a route.
+This mode allows you to define a save path (if not explicitly defined with the --save parameter), with the path of the Orthophotos followed by the sub-name '-saved'.
+For example:
+Path to locate the DDS/PNG orthophotos files: '/media/abassign/test/fgfs-scenery/photoscenery/Orthophotos'
+Path to save the DDS/PNG orthophotos files: '/media/abassign/test/fgfs-scenery/photoscenery/Orthophotos-saved'
+
+### --nosave parameter
+If you want to inhibit the autosave mode, just enter the --nosave parameter in the command line.
+
+### Automatic deletion of unreadable DDS or PNG files
+The automatic deletion of the files takes place during the scanning of the files in the preparatory phase for the execution.
+
+### End the program with CTRL-c
+The support for closing the program with CTRL-C has been improved, but it is still not perfect as a result of an error in the case that the --connect option is active and the FGFS program is not yet active.
+
+### TilesDatabase.jl
+the createFilesListTypeDDSandPNG (...) function has been modified by inserting a mutithread search. In this way instead of taking for example 40 seconds to analyze all the images (about 8000 in the test computer) it takes 10 seconds with 6 threads.
+This search function is essential for managing the automatic saving of images if their resolution is changed.
