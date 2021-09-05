@@ -3,9 +3,11 @@
 # Licence: GPL 2
 # Date start production: April 2021
 
-module PhotoscenaryCommons
+module Commons
 
     using Printf
+
+    include("./ScanDir.jl")
 
     export tileWidth, index, coordFromIndex, findFile, getFileExtension, getFileName, getDDSSize, getPNGSize, displayCursorTypeA
 
@@ -41,6 +43,8 @@ module PhotoscenaryCommons
 
     sizeHight(sizeWidth,lat) = Int(sizeWidth / (8 * tileWidth(lat)))
 
+    inValue(value,extrem) = abs(value) <= extrem
+
 
     function coordFromIndex(index)
         lon = (index >> 14) - 180
@@ -55,14 +59,40 @@ module PhotoscenaryCommons
     end
 
 
-    function findFile(fileName,path=homedir())
+    function countDirError()
+        dirsWithErrors::Int = 0
+        add(err) = dirsWithErrors += 1
+        get() = dirsWithErrors
+        () -> (add;get)
+    end
+
+
+    function findFile(fileName::String,path::Union{String,Nothing}=nothing)
+        if (path == nothing)
+            if length(dirname(fileName)) > 0
+                path = dirname(fileName)
+                fileName = basename(fileName)
+            else
+                if !isfile(fileName)
+                    path = homedir()
+                    fileName = basename(fileName)
+                else
+                    path = pwd()
+                end
+            end
+        end
         filesPath = Any[]
-        id = 0
-        for (root, dirs, files) in walkdir(path)
-            for file in files
-                if file == fileName
-                    id += 1
-                    push!(filesPath,(id,joinpath(root, file),stat(joinpath(root, file)).mtime,stat(joinpath(root, file)).size))
+        if isfile(joinpath(path,fileName))
+            push!(filesPath,(1,joinpath(path,fileName),stat(fileName).mtime,stat(fileName).size))
+        else
+            cde = countDirError()
+            id = 0
+            for (root, dirs, files) in ScanDir.walkdir(path; onerror = e->(cde.add(e)))
+                for file in files
+                    if file == fileName
+                        id += 1
+                        push!(filesPath,(id,joinpath(root, file),stat(joinpath(root, file)).mtime,stat(joinpath(root, file)).size))
+                    end
                 end
             end
         end
@@ -99,7 +129,6 @@ module PhotoscenaryCommons
             return false,0,0
         end
     end
-
 
 
     function getPNGSize(imageWithPathTypePNG)
