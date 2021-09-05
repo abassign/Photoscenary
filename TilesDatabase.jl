@@ -19,7 +19,7 @@ module TilesDatabase
         x::Int
         y::Int
         function TailCoordinates(index::Int)
-            (lonDeg,latDeg,lon,lat,x,y) = PhotoscenaryCommons.coordFromIndex(index)
+            (lonDeg,latDeg,lon,lat,x,y) = Commons.coordFromIndex(index)
             return new(lonDeg,latDeg,lon,lat,x,y)
         end
     end
@@ -100,7 +100,7 @@ module TilesDatabase
                 #dump(record)
                 if record.pixelSizeW == pixelSizeW && record.format == aFormat && isSkip == false
                     # Create the effective path
-                    cfi = PhotoscenaryCommons.coordFromIndex(index)
+                    cfi = Commons.coordFromIndex(index)
                     basePath = normpath(aBasePath * "/" * cfi[7] * "/" * cfi[8]) ## * "/" * string(index) * fileExt
                     if record.path != (basePath * "/" * string(index) * fileExt)
                         if !ispath(basePath) mkpath(basePath) end
@@ -126,14 +126,14 @@ module TilesDatabase
 
 
     function moveOrDeleteTiles(index::Int64,pathFromBase::String,format::Int,pathToBase::Union{String,Nothing} = nothing)
-        cfi = PhotoscenaryCommons.coordFromIndex(index)
+        cfi = Commons.coordFromIndex(index)
         fileExt = format == 0 ? ".png" : ".dds"
         fileFromWithPath = normpath(pathFromBase * "/" * cfi[7] * "/" * cfi[8]) * "/" * string(index) * fileExt
         if format == 1
-            (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getDDSSize(fileFromWithPath)
+            (isCorrect,pixelSizeW,pixelSizeH) = Commons.getDDSSize(fileFromWithPath)
             #println("moveOrDeleteTiles - format = 1 | $fileFromWithPath | $isCorrect | $pixelSizeW")
         else
-            (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getPNGSize(fileFromWithPath)
+            (isCorrect,pixelSizeW,pixelSizeH) = Commons.getPNGSize(fileFromWithPath)
             #println("moveOrDeleteTiles - format = 0 | $fileFromWithPath | $isCorrect | $pixelSizeW")
         end
         try
@@ -181,11 +181,11 @@ module TilesDatabase
                     for (root, dirs, files) in ScanDir.walkdir(path; onerror = e->(cde.add(e)))
                         @sync begin
                             Threads.@threads for file in files
-                                fe = PhotoscenaryCommons.getFileExtension(file)
+                                fe = Commons.getFileExtension(file)
                                 if fe != nothing && (uppercase(fe) == ".DDS" || uppercase(fe) == ".PNG")
-                                    index = Parsers.tryparse(Int,PhotoscenaryCommons.getFileName(file))
+                                    index = Parsers.tryparse(Int,Commons.getFileName(file))
                                     if index != nothing
-                                        cfi = PhotoscenaryCommons.coordFromIndex(index)
+                                        cfi = Commons.coordFromIndex(index)
                                         slash = "/"
                                         if Base.Sys.iswindows() slash = "\\" end
                                         if uppercase(fe) == ".DDS"
@@ -198,9 +198,9 @@ module TilesDatabase
                                         jp = joinpath(root, file)
                                         if findlast(fileWithPath,jp) != nothing
                                             if format == 1
-                                                (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getDDSSize(jp)
+                                                (isCorrect,pixelSizeW,pixelSizeH) = Commons.getDDSSize(jp)
                                             else
-                                                (isCorrect,pixelSizeW,pixelSizeH) = PhotoscenaryCommons.getPNGSize(jp)
+                                                (isCorrect,pixelSizeW,pixelSizeH) = Commons.getPNGSize(jp)
                                             end
                                             if isCorrect
                                                 td = TailData(jp,file,stat(jp).mtime,stat(jp).size,pixelSizeW,pixelSizeH,format)

@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.8"
-versionProgramDate = "Testing 20210901"
+versionProgram = "0.3.9"
+versionProgramDate = "Testing 20210905"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -153,13 +153,13 @@ end
 @everywhere using SharedArrays
 
 try
-    #include("commons.jl")
     include("./Commons.jl")
     include("./TilesDatabase.jl")
     include("./Connector.jl")
     include("./Geodesics.jl")
+    include("./Route.jl")
 catch err
-    println("\nError, the PhotoscenaryCommons.jl file or the tilesDatabase.jl file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.\n$err")
+    println("\nError, a julia module file is missing\nCheck that the files are loaded in the same directory that contains the photoscenary.jl program.\n$err")
     ccall(:jl_exit, Cvoid, (Int32,), 500)
 end
 
@@ -263,7 +263,7 @@ struct MapCoordinates
     positionRoute::Union{FGFSPositionRoute,Nothing}
 
     function MapCoordinates(lat::Float64,lon::Float64,radius::Float64)
-        (latLL,lonLL,latUR,lonUR) = PhotoscenaryCommons.latDegByCentralPoint(lat,lon,radius)
+        (latLL,lonLL,latUR,lonUR) = Commons.latDegByCentralPoint(lat,lon,radius)
         return new(lat,lon,radius,latLL,lonLL,latUR,lonUR,true)
     end
 
@@ -346,8 +346,8 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
     # Normalization to 0.125 deg
     latLL = m.latLL - mod(m.latLL,0.125)
     latUR = m.latUR - mod(m.latUR,0.125) + 0.125
-    lonLL = m.lonLL - mod(m.lonLL,PhotoscenaryCommons.tileWidth(m.lat))
-    lonUR = m.lonUR - mod(m.lonUR,PhotoscenaryCommons.tileWidth(m.lat)) + PhotoscenaryCommons.tileWidth(m.lat)
+    lonLL = m.lonLL - mod(m.lonLL,Commons.tileWidth(m.lat))
+    lonUR = m.lonUR - mod(m.lonUR,Commons.tileWidth(m.lat)) + Commons.tileWidth(m.lat)
     a = [(
             string(lon >= 0.0 ? "e" : "w", lon >= 0.0 ? @sprintf("%03d",floor(abs(lon),digits=-1)) : @sprintf("%03d",ceil(abs(lon),digits=-1)),
                 lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(abs(lat),digits=-1)) : @sprintf("%02d",ceil(abs(lat),digits=-1))),
@@ -355,16 +355,16 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
                 lat >= 0.0 ? "n" : "s", lat >= 0.0 ? @sprintf("%02d",floor(Int,abs(lat))) : @sprintf("%02d",ceil(Int,abs(lat)))),
             lon,
             lat,
-            lon + PhotoscenaryCommons.tileWidth(lat),
+            lon + Commons.tileWidth(lat),
             lat + 0.125,
             floor(Int,lat*10),
-            PhotoscenaryCommons.index(lat,lon),
-            PhotoscenaryCommons.x(lat,lon),
-            PhotoscenaryCommons.y(lat),
-            PhotoscenaryCommons.tileWidth(lat),
-            round(euclidean_distance(LLA(lat + (0.125/2.0),lon + PhotoscenaryCommons.tileWidth(lat)/2.0,0.0),LLA(m.lat,m.lon, 0.0)) / 1852.0 / 2.0,digits=3)
+            Commons.index(lat,lon),
+            Commons.x(lat,lon),
+            Commons.y(lat),
+            Commons.tileWidth(lat),
+            round(euclidean_distance(LLA(lat + (0.125/2.0),lon + Commons.tileWidth(lat)/2.0,0.0),LLA(m.lat,m.lon, 0.0)) / 1852.0 / 2.0,digits=3)
         )
-        for lat in latLL:0.125:latUR for lon in lonLL:PhotoscenaryCommons.tileWidth(lat):lonUR
+        for lat in latLL:0.125:latUR for lon in lonLL:Commons.tileWidth(lat):lonUR
     ]
     # print data sort by tile index
     aSort = sort!(a,by = x -> x[12])
@@ -440,85 +440,6 @@ function getMapServer(m::MapServer,latLL,lonLL,latUR,lonUR,szWidth,szHight)
 end
 
 
-function findFileOfRoute(fileName)
-    date = 0.0
-    fileId = 0
-    route = nothing
-    files = findFile(fileName)
-    for file in files
-        if file[3] > date
-            # Test the file
-            try
-                route = get_elements_by_tagname(LightXML.root(parse_file(file[2])),"route")
-                fileId = file[1]
-                date = file[3]
-            catch
-            end
-        end
-    end
-    if fileId > 0
-        return route,files[fileId][2]
-    else
-        return nothing
-    end
-end
-
-
-function loadRoute(fileOfRoute,centralPointRadiusDistance)
-    routeList = Any[]
-    route = findFileOfRoute(fileOfRoute)
-    if route != nothing
-        wps = get_elements_by_tagname(route[1][1], "wp")
-        centralPointRadiusDistanceFactor = 1.5
-        centralPointLatPrec = nothing
-        centralPointLonPrec = nothing
-        for wp in wps
-            foundData = false
-            if wp != nothing
-                if find_element(wp,"icao") != nothing
-                    icao = strip(content(find_element(wp,"icao")))
-                    (centralPointLat, centralPointLon, errorCode) = selectIcao(icao,centralPointRadiusDistance)
-                    if errorCode == 0 foundData = true end
-                elseif find_element(wp,"lon") != nothing
-                    centralPointLat = Base.parse(Float64, strip(content(find_element(wp,"lat"))))
-                    centralPointLon = Base.parse(Float64, strip(content(find_element(wp,"lon"))))
-                    foundData = true
-                end
-                if foundData
-                    # Get the distance
-                    if centralPointLatPrec != nothing && centralPointLonPrec != nothing
-                        posPrec = LLA(centralPointLatPrec,centralPointLonPrec, 0.0)
-                        pos = LLA(centralPointLat,centralPointLon, 0.0)
-                        distanceNm = euclidean_distance(pos,posPrec) / 1852.0
-                    else
-                        distanceNm = 0.0
-                    end
-                    minDistance = centralPointRadiusDistance * centralPointRadiusDistanceFactor
-                    if minDistance < distanceNm
-                        numberTrunk = Int32(round(distanceNm / minDistance))
-                        for i in 1:(numberTrunk - 1)
-                            degLat = centralPointLatPrec + i * (centralPointLat - centralPointLatPrec) / numberTrunk
-                            deglon = centralPointLonPrec + i * (centralPointLon - centralPointLonPrec) / numberTrunk
-                            dist = euclidean_distance(LLA(degLat,deglon, 0.0),posPrec) / 1852.0
-                            push!(routeList,(degLat, deglon, dist))
-                            println("Load Route step $(size(routeList)[1]).$i coordinates lat: $(round(routeList[end][1],digits=4)) lon: $(round(routeList[end][2],digits=4)) distance: $(round(dist,digits=1))")
-                        end
-                    end
-                    push!(routeList,(centralPointLat, centralPointLon, distanceNm))
-                    println("Load Route step $(size(routeList)[1]).0 coordinates lat: $(round(routeList[end][1],digits=4)) lon: $(round(routeList[end][2],digits=4)) distance: $(round(distanceNm,digits=1))")
-                    centralPointLatPrec = centralPointLat
-                    centralPointLonPrec = centralPointLon
-                end
-            end
-        end
-    else
-        println("\nError: loadRoute in the route file: $fileOfRoute")
-    end
-    #ccall(:jl_exit, Cvoid, (Int32,), 405)
-    return routeList, size(routeList)[1]
-end
-
-
 #Testing image magick
 function checkImageMagick(imageMagickPath)
     imageMagickTest = nothing
@@ -588,66 +509,6 @@ function checkImageMagick(imageMagickPath)
         println("was not found, check if the path was written correctly or 'imageMagick' is installed on your system.")
         return false,imageMagickPath
     end
-end
-
-
-# Select lat lon by ICAO airport id or name or municipality
-function selectIcao(icaoToSelect, centralPointRadiusDistance)
-    centralPointLat = nothing
-    centralPointLon = nothing
-    errorCode = 0
-    # Test the DB csv or jdb
-    if stat("airports.csv").mtime > stat("airports.jdb").mtime
-        println("\nThe airports database 'airports.csv' is loading for conversion in airports.jdb file")
-        JuliaDB.save(JuliaDB.loadtable("airports.csv"),"airports.jdb")
-    elseif stat("airports.jdb").mtime == 0.0
-        println("\nError: The airports.jdb file and airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory")
-        errorCode = 403
-    end
-    if errorCode == 0
-        try
-            db = JuliaDB.load("airports.jdb")
-            # println("\nThe airports database 'airports.csv' is loading")
-            searchString = Unicode.normalize(uppercase(icaoToSelect),stripmark=true)
-            # Frist step try with ICAO ident
-            foundDatas = filter(i -> (i.ident == searchString),db)
-            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.municipality),stripmark=true)),db)
-            end
-            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.name),stripmark=true)),db)
-            end
-            if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 1
-                if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
-                centralPointLat = foundDatas[1][:latitude_deg]
-                centralPointLon = foundDatas[1][:longitude_deg]
-                # Some airports have the location data multiplied by a thousand, in this case we proceed to the reduction
-                if !(inValue(centralPointLat,90) && inValue(centralPointLon,180))
-                    if abs(centralPointLat) > 1000.0 centralPointLat /= 1000.0 end
-                    if abs(centralPointLon) > 1000.0 centralPointLon /= 1000.0 end
-                end
-                println("\nThe ICAO term $(icaoToSelect) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $(round(centralPointLat,digits=4)) lon: $(round(centralPointLon,digits=4)) radius: $centralPointRadiusDistance nm")
-            else
-                if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] > 1
-                    errorCode = 401
-                    println("\nError: The ICAO search term $(icaoToSelect) is ambiguous, there are $(JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1]) airports with a similar term")
-                    cycle = 0
-                    for data in foundDatas
-                        println("\tId: $(data[:ident])\tname: $(data[:name]) ($(data[:municipality]))")
-                        cycle += 1
-                        if cycle > 30 break end
-                    end
-                else
-                    errorCode = 400
-                    println("\nError: The ICAO search term $(icaoToSelect) is not found in the airports.csv database")
-                end
-            end
-        catch err
-            println("\nError: The airports.jdb file is corrupt\n\tPlease, make sure if airports.csv file is present in the program directory\n\tRemove the corrupt airports.jdb file and restart the program\nError code is $err")
-            errorCode = 404
-        end
-    end
-    return centralPointLat, centralPointLon, errorCode
 end
 
 
@@ -753,7 +614,7 @@ function downloadImages(tp,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
     latUR = tp[6]
     cols = tp[13]
     sizeWidth = tp[12]
-    sizeHight = Int(sizeWidth / (8 * PhotoscenaryCommons.tileWidth((latUR + latLL) / 2.0)))
+    sizeHight = Int(sizeWidth / (8 * Commons.tileWidth((latUR + latLL) / 2.0)))
     #imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
     imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
     downloadPNGIsCompleteNumber = 0
@@ -837,8 +698,8 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
                 end
             end
         else
-            dataFileImageDDS = PhotoscenaryCommons.getDDSSize(imageWithPathTypeDDS)
-            dataFileImagePNG = PhotoscenaryCommons.getPNGSize(imageWithPathTypePNG)
+            dataFileImageDDS = Commons.getDDSSize(imageWithPathTypeDDS)
+            dataFileImagePNG = Commons.getPNGSize(imageWithPathTypePNG)
             if dataFileImageDDS[1]
                 if overWriteTheTiles >= 9
                     TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
@@ -1158,9 +1019,6 @@ function cmgsExtractTest(cmgs)
 end
 
 
-inValue(value,extrem) = abs(value) <= extrem
-
-
 setDegreeUnit(isSexagesimal,degree) = isSexagesimal ? trunc(degree) + (degree - trunc(degree)) * (10.0/6.0) : degree
 
 
@@ -1173,7 +1031,7 @@ function photoscenary(args)
     routeListSize = 0
     positionRoute = nothing
     rootPath = nothing
-    arrow = PhotoscenaryCommons.displayCursorTypeA()
+    arrow = Commons.displayCursorTypeA()
     timeLastConnect = time()
 
     imageMagickPath = inizialize()
@@ -1210,7 +1068,7 @@ function photoscenary(args)
         # Select lat lon by ICAO airport id or name or municipality
         # Test the DB csv or jdb
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
-        (centralPointLat, centralPointLon, errorCode) = selectIcao(parsedArgs["icao"],centralPointRadiusDistance)
+        (centralPointLat, centralPointLon, errorCode) = Route.selectIcao(parsedArgs["icao"],centralPointRadiusDistance)
         if errorCode > 0
             # Error
             println("Term the program with exit code $errorCode")
@@ -1231,7 +1089,7 @@ function photoscenary(args)
         end
     elseif parsedArgs["route"] != nothing
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
-        (routeList,routeListSize) = loadRoute(parsedArgs["route"],centralPointRadiusDistance)
+        (routeList,routeListSize) = Route.loadRoute(parsedArgs["route"],centralPointRadiusDistance)
     elseif parsedArgs["connect"] != nothing
         connectIp = parsedArgs["connect"]
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
@@ -1345,7 +1203,7 @@ function photoscenary(args)
         end
 
         if systemCoordinatesIsPolar
-            if !(inValue(routeList[routeListStep][1],90) && inValue(routeList[routeListStep][2],180))
+            if !(Commons.inValue(routeList[routeListStep][1],90) && Commons.inValue(routeList[routeListStep][2],180))
                 println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlat: $(routeList[routeListStep][1]) lon: $(routeList[routeListStep][2])")
                 ccall(:jl_exit, Cvoid, (Int32,), 505)
             end
@@ -1356,7 +1214,7 @@ function photoscenary(args)
             latUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["latur"]),digits=3)
             lonUR = round(setDegreeUnit(isSexagesimalUnit,parsedArgs["lonur"]),digits=3)
             # Check the coordinates
-            if !(inValue(latLL,90) && inValue(lonLL,180) && inValue(latUR,90) && inValue(lonUR,180))
+            if !(Commons.inValue(latLL,90) && Commons.inValue(lonLL,180) && Commons.inValue(latUR,90) && Commons.inValue(lonUR,180))
                 println("\nError: The process will terminate as the entered coordinates are not consistent\n\tlatLL: $latLL lonLL: $lonLL latUR: $latUR lonUR: $lonUR")
                 ccall(:jl_exit, Cvoid, (Int32,), 505)
             end
@@ -1511,6 +1369,11 @@ function photoscenary(args)
                     sleep(0.5)
                 end
             end
+        else
+            if routeListStep >= routeListSize
+                println("\n\nAll processes are finished, exit and terminate the program")
+                return false
+            end
         end
 
     end
@@ -1527,7 +1390,7 @@ function main(args)
         try
             if !startPhotoscenary
                 @async begin
-                    photoscenary(args)
+                    goProgram = photoscenary(args)
                 end
                 startPhotoscenary = true
             end

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" creator="SkyVector" version="1.1" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <rte>
+    <name>LIME-LIMJ</name>
+    <rtept lat="45.668889" lon="9.700278">
+      <name>LIME</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="45.636967" lon="9.866238">
+      <name>SV001</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="45.226278" lon="9.541194">
+      <name>COD</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="44.315865" lon="9.328938">
+      <name>SV002</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="44.413333" lon="8.837500">
+      <name>LIMJ</name>
+      <overfly>false</overfly>
+    </rtept>
+
+  </rte>
+</gpx>

@@ -46,3 +46,17 @@ The support for closing the program with CTRL-C has been improved, but it is sti
 ### TilesDatabase.jl
 the createFilesListTypeDDSandPNG (...) function has been modified by inserting a mutithread search. In this way instead of taking for example 40 seconds to analyze all the images (about 8000 in the test computer) it takes 10 seconds with 6 threads.
 This search function is essential for managing the automatic saving of images if their resolution is changed.
+
+## 0.3.9 date 20210905
+
+### Skyvector import route
+Since version 0.3.9 the automatic conversion of files produced with Skyvector has been defined. The file in .gpx format is automatically converted to produce the equivalent route to the file produced by the FGFS route manager.
+
+### More precise search of the route files
+More precise search of the route files inserted with the --route parameter. The files are searched first if they are inside the directory containing the program, if they are not inside the directory, the scan is done inside the user's home directory.
+
+### Module: Route.jl has been introduced
+Continue to reorganize the code, now the module: Route.jl has been introduced which contains the functions used by the --route parameter and the airport database used with the --icao option.
+
+### Program exit was reactivated
+Program exit was reactivated after all processes were terminated. This feature did not work with version 0.3.8.
