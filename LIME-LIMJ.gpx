@@ -6,15 +6,31 @@
       <name>LIME</name>
       <overfly>false</overfly>
     </rtept>
-    <rtept lat="45.636967" lon="9.866238">
+    <rtept lat="45.658797" lon="9.376619">
+      <name>D266N</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="45.645972" lon="9.021583">
+      <name>SRN</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="44.964583" lon="8.970194">
+      <name>VOG</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="44.865278" lon="8.991389">
+      <name>ULCOR</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="44.424444" lon="9.082333">
+      <name>GEN</name>
+      <overfly>false</overfly>
+    </rtept>
+    <rtept lat="44.325704" lon="9.592819">
       <name>SV001</name>
       <overfly>false</overfly>
     </rtept>
-    <rtept lat="45.226278" lon="9.541194">
-      <name>COD</name>
-      <overfly>false</overfly>
-    </rtept>
-    <rtept lat="44.315865" lon="9.328938">
+    <rtept lat="44.313695" lon="9.328842">
       <name>SV002</name>
       <overfly>false</overfly>
     </rtept>

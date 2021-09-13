@@ -60,3 +60,11 @@ Continue to reorganize the code, now the module: Route.jl has been introduced wh
 
 ### Program exit was reactivated
 Program exit was reactivated after all processes were terminated. This feature did not work with version 0.3.8.
+
+## 0.3.10 date 20210913
+
+### Autimatic rebuild of the airports.jdb file
+Upon a user recommendation, I have inserted the automatic rebuild of the airports.jdb database file if found corrupt. The database file takes the data from the airports.csv file always present in the directory that contains the photoscenary.ij program.
+
+### Pkg.build("CodecZlib")
+The CodecZlib module is sometimes problematic in version management if highly complex packages are installed. The only practical solution is to require the module to be recompiled with the Pkg.build function. Not being able to know the actual installation status of the files, I found it much more convenient to run this command anyway even if the CodecZlib module was well installed.
