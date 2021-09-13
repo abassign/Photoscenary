@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.9"
-versionProgramDate = "Testing 20210905"
+versionProgram = "0.3.10"
+versionProgramDate = "Testing 20210921"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -96,14 +96,14 @@ begin
         using Printf
         using HTTP
         using FileIO
-        using Images
+        using Images    # Warning: 20210910 possible problems with PLMakie
         using ImageIO
         using DataFrames
         using DataFramesMeta
         using Geodesy
         using Parsers
         using Sockets
-        using EzXML
+        ## using EzXML
         using ThreadSafeDicts
     catch
         if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
@@ -134,8 +134,11 @@ begin
             Pkg.add("Geodesy")
             Pkg.add("Parsers")
             Pkg.add("Sockets")
-            Pkg.add("EzXML")
+            ## Pkg.add("EzXML")
             Pkg.add("ThreadSafeDicts")
+            # Sometimes this package has problems with other packages installed in Julia it is better to run this command:
+            Pkg.build("CodecZlib")
+            # The installation of the packages is complete
             println("\nThe Julia system has been updated")
         end
     catch err
@@ -406,7 +409,6 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
         println("Number of tiles to process: $numberOfTiles")
         println("----------\n")
     end
-
     return d,numberOfTiles
 end
 
@@ -921,6 +923,10 @@ function parseCommandline(args)
             help = "Overwrite the tiles: |1|only if bigger resolution |2|for all"
             arg_type = Int64
             default = 0
+        "--search"
+            help = "Search the DDS or PNG files in the specific path"
+            arg_type = String
+            default = nothing
         "--path", "-p"
             help = "Path to store the dds images"
             arg_type = String
@@ -1043,7 +1049,7 @@ function photoscenary(args)
 
     parsedArgs = parseCommandline(args)
 
-    if parsedArgs["version"] return 0 end
+    if parsedArgs["version"] return false end
 
     mapServer = MapServer(parsedArgs["map"], parsedArgs["proxy"])
     (serviceWebUrl,errorCode) = getMapServer(mapServer,1,2,3,4,5,6)
@@ -1173,6 +1179,7 @@ function photoscenary(args)
     # Path to save the files remove
     isNoSaveFiles = parsedArgs["nosave"]
     pathToSave = parsedArgs["save"]
+    pathToSearch = parsedArgs["search"]
     if pathToSave != nothing
         isNoSaveFiles = false
         pathToSave = normpath(pathToSave)
@@ -1186,7 +1193,7 @@ function photoscenary(args)
 
     # Generate the TileDatabase
     println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
-    tileDatabase = TilesDatabase.createFilesListTypeDDSandPNG(nothing,rootPath,pathToSave)
+    tileDatabase = TilesDatabase.createFilesListTypeDDSandPNG(pathToSearch,rootPath,pathToSave)
     println("The tiles database has been generated and verified")
 
     # Download thread
@@ -1228,7 +1235,6 @@ function photoscenary(args)
         numbersOfTilesToElaborate = 0
         numbersOfTilesInserted = 0
         numbersOfTilesElaborate = 0
-
         while continueToReatray
             # Generate the coordinate matrix
             # Resize management with smaller dimensions
@@ -1239,7 +1245,6 @@ function photoscenary(args)
                 (cmgs,cmgsSize) = coordinateMatrixGenerator(mpc,unCompletedTiles,size,sizeDwn,unCompletedTilesAttemps,positionRoute,debugLevel)
                 numbersOfTilesToElaborate = cmgsSize
             end
-
             println("\nStart the elaboration n. $(unCompletedTilesAttemps+1) for $numbersOfTilesToElaborate tiles the Area deg is",
                 @sprintf(" latLL: %02.3f",mpc.latLL),
                 @sprintf(" lonLL: %03.3f",mpc.lonLL),
