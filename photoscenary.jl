@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.10"
-versionProgramDate = "Testing 20210921"
+versionProgram = "0.3.11"
+versionProgramDate = "Testing 20210923"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -103,7 +103,7 @@ begin
         using Geodesy
         using Parsers
         using Sockets
-        ## using EzXML
+        using EzXML
         using ThreadSafeDicts
     catch
         if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
@@ -134,7 +134,7 @@ begin
             Pkg.add("Geodesy")
             Pkg.add("Parsers")
             Pkg.add("Sockets")
-            ## Pkg.add("EzXML")
+            Pkg.add("EzXML")
             Pkg.add("ThreadSafeDicts")
             # Sometimes this package has problems with other packages installed in Julia it is better to run this command:
             Pkg.build("CodecZlib")
@@ -390,7 +390,7 @@ function coordinateMatrixGenerator(m::MapCoordinates,whiteTileIndexListDict,size
             push!(c,t)
             push!(c,0)
             numberOfTiles += 1
-            if isDebug > 0 println("\nTile id: ",t[7]," coordinates: ",t[1]," ",t[2],
+            if isDebug > 0 println("Tile id: ",t[7]," coordinates: ",t[1]," ",t[2],
                 " | lon: ",@sprintf("%03.6f ",t[3]),
                 @sprintf("%03.6f ",t[4]),
                 "lat: ",@sprintf("%03.6f ",t[5]),
@@ -1071,6 +1071,7 @@ function photoscenary(args)
     centralPointRadiusDistance = parsedArgs["radius"]
 
     if parsedArgs["icao"] != nothing
+        println("\nThe program get localization is in ICAO mode")
         # Select lat lon by ICAO airport id or name or municipality
         # Test the DB csv or jdb
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
@@ -1083,6 +1084,7 @@ function photoscenary(args)
         routeList = push!(routeList,(centralPointLat,centralPointLon))
         routeListSize = 1
     elseif parsedArgs["tile"] != nothing
+        println("\nThe program get localization is in TILE mode")
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         if parsedArgs["tile"] > 20
             centralPointLon = coordFromIndex(parsedArgs["tile"])[1]
@@ -1094,9 +1096,11 @@ function photoscenary(args)
             ccall(:jl_exit, Cvoid, (Int32,), 403)
         end
     elseif parsedArgs["route"] != nothing
+        println("\nThe program get localization is in ROUTE mode")
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         (routeList,routeListSize) = Route.loadRoute(parsedArgs["route"],centralPointRadiusDistance)
     elseif parsedArgs["connect"] != nothing
+        println("\nThe program get localization is in CONNECT to Ip mode")
         connectIp = parsedArgs["connect"]
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         # The route is built in connection with the aircraft
@@ -1127,6 +1131,7 @@ function photoscenary(args)
                 end
             end
     else
+        println("\nThe program get localization is in POINT lat-lon mode")
         centralPointLat = setDegreeUnit(isSexagesimalUnit,parsedArgs["lat"])
         centralPointLon = setDegreeUnit(isSexagesimalUnit,parsedArgs["lon"])
         routeList = push!(routeList,(centralPointLat,centralPointLon))
@@ -1157,6 +1162,7 @@ function photoscenary(args)
         # The first asterisk character indicates that the path has not been changed and therefore it is possible to insert the default one
         pathFromParsed = "fgfs-scenery/photoscenery"
     end
+    println("\nThe program set the '$pathFromParsed' path")
     if rootPath == nothing
         if Base.Sys.iswindows()
             if pathToTest[2] == ':' || pathToTest[1] == '\\'
@@ -1235,6 +1241,7 @@ function photoscenary(args)
         numbersOfTilesToElaborate = 0
         numbersOfTilesInserted = 0
         numbersOfTilesElaborate = 0
+
         while continueToReatray
             # Generate the coordinate matrix
             # Resize management with smaller dimensions
@@ -1255,14 +1262,16 @@ function photoscenary(args)
                 " to $(getSizePixel(sizeDwn)[1]) | $(getSizePixel(sizeDwn)[2]) pix",
                 " Cycle: $unCompletedTilesAttemps",
                 "\nThe images path is: $rootPath\n")
-
+            if debugLevel >= 3 println("Debug set program #3.1") end
             while cmgsExtractTest(cmgs)
                 threadsActive = 0
                 Threads.@threads for cmg in cmgsExtract(cmgs)
+                    if debugLevel >= 3 println("Debug set program #3.2.1") end
                     threadsActive += 1
                     theBatchIsNotCompleted = false
                     (theBatchIsNotCompleted,tileIndex,theDDSorPNGFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSorPNGFile(rootPath,cmg,overWriteTheTiles,imageMagickPath,mapServer,tileDatabase,isPngFileFormatOnly,pathToSave,debugLevel)
                     if theDDSorPNGFileIsOk >= 1
+                        if debugLevel >= 3 println("Debug set program #3.2.1") end
                         numbersOfTilesElaborate += 1
                         if timeElaboration != nothing && theBatchIsNotCompleted == false
                             timeElaborationForAllTilesInserted += timeElaboration
@@ -1273,6 +1282,7 @@ function photoscenary(args)
                             unCompletedTilesNumber -= 1
                         end
                     elseif theBatchIsNotCompleted
+                        if debugLevel >= 3 println("Debug set program #3.2.2") end
                         if haskey(unCompletedTiles,tileIndex)
                             push!(unCompletedTiles,tileIndex => unCompletedTiles[tileIndex] + 1)
                         else
@@ -1281,8 +1291,10 @@ function photoscenary(args)
                         if ifFristCycle unCompletedTilesNumber += 1 end
                     else
                         numbersOfTilesElaborate += 1
+                        if debugLevel >= 3 println("Debug set program #3.2.3") end
                     end
                     if theDDSorPNGFileIsOk != 0
+                        if debugLevel >= 3 println("Debug set program #3.2.4") end
                         if theDDSorPNGFileIsOk == 1
                             totalBytePNG += fileSizePNG
                             totalByteDDS += fileSizeDDS
@@ -1302,6 +1314,7 @@ function photoscenary(args)
                         elseif theDDSorPNGFileIsOk <= -10
                             theDDSorPNGFileIsOkStatus = "(HTTP! $theDDSorPNGFileIsOk) "
                         end
+                        if debugLevel >= 3 println("Debug set program #3.2.5") end
                         timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
                         println('\r',
                             @sprintf("Time: %6d",time()-timeStart),
@@ -1321,10 +1334,12 @@ function photoscenary(args)
                             theDDSorPNGFileIsOkStatus
                         )
                     else
+                        if debugLevel >= 3 println("Debug set program #3.2.6") end
                         totalBytePNG += fileSizePNG
                     end
                 end
             end
+
             # Check the incomplete Tiles
             continueToReatray = false
             isIncompleteTileList = false
