@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.11"
-versionProgramDate = "Testing 20210923"
+versionProgram = "0.3.12"
+versionProgramDate = "20210929"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -884,11 +884,11 @@ function parseCommandline(args)
         "--lat", "-a"
             help = "Latitude in deg of central point"
             arg_type = Float64
-            default = 45.66
+            default = nothing
         "--lon", "-o"
             help = "Longitude in deg of central point"
             arg_type = Float64
-            default = 9.7
+            default = nothing
         "--sexagesimal", "-x"
             help = "Set the sexagesimal unit degree.minutes"
             action = :store_true
@@ -930,8 +930,7 @@ function parseCommandline(args)
         "--path", "-p"
             help = "Path to store the dds images"
             arg_type = String
-            #default = "fgfs-scenery/photoscenery"
-            default = "*"
+            default = nothing
         "--save"
             help = "Save the remove files in the specific path"
             arg_type = String
@@ -940,7 +939,7 @@ function parseCommandline(args)
             help = "Not save the DDS/PNG files"
             action = :store_true
         "--connect"
-            help = "IP and port FGFS program, example format: \"127.0.0.1:5000\""
+            help = "IP and port FGFS program, default value and format: \"127.0.0.1:5000\""
             arg_type = String
             default = nothing
         "--proxy"
@@ -1070,6 +1069,7 @@ function photoscenary(args)
     unCompletedTilesMaxAttemps = parsedArgs["attemps"]
     centralPointRadiusDistance = parsedArgs["radius"]
 
+    # Search the positions
     if parsedArgs["icao"] != nothing
         println("\nThe program get localization is in ICAO mode")
         # Select lat lon by ICAO airport id or name or municipality
@@ -1100,41 +1100,58 @@ function photoscenary(args)
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         (routeList,routeListSize) = Route.loadRoute(parsedArgs["route"],centralPointRadiusDistance)
     elseif parsedArgs["connect"] != nothing
-        println("\nThe program get localization is in CONNECT to Ip mode")
         connectIp = parsedArgs["connect"]
+        println("\nThe program try to get the path and localization with CONNECT to Ip mode with address: $connectIp")
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
         # The route is built in connection with the aircraft
         # It waits for a small amount of time to connect to the server
         findPosition = false
-            @sync begin
-                println("\nTry to Flightgear connect with address: $connectIp radius: $centralPointRadiusDistance")
-                pathFromParsed = parsedArgs["path"]
-                if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 0
-                    defaultRootPath = getFGFSPathScenery(connectIp,debugLevel)
-                else
-                    defaultRootPath = nothing
+        @sync begin
+            pathFromParsed = parsedArgs["path"]
+            if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 0
+                println("\nTry to Flightgear connect with address: $connectIp to get the path")
+                defaultRootPath = getFGFSPathScenery(connectIp,debugLevel)
+                if defaultRootPath != nothing
+                    rootPath = normpath(defaultRootPath * "/Orthophotos")
                 end
-                @async while !findPosition
-                    if positionRoute == nothing positionRoute = getFGFSPositionSetTask(connectIp,centralPointRadiusDistance,0.3,debugLevel) end
-                    if positionRoute.size > 0
-                        routeListSize += 1
-                        routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
-                        findPosition = true
-                        if defaultRootPath != nothing
-                            rootPath = normpath(defaultRootPath * "/Orthophotos")
-                        end
-                        println("\nConnected to Flightgear with address: $connectIp radius: $centralPointRadiusDistance path: '$(rootPath)'")
-                    else
-                        print("\r$(arrow.get()) Try the frist connection to Flightgear with address: $connectIp waiting time: $(Int(round(time()-timeLastConnect))). Press CTRL+C to stop the program and exit")
-                        sleep(positionRoute.stepTime)
+            else
+                defaultRootPath = nothing
+            end
+            @async while !findPosition
+                if positionRoute == nothing positionRoute = getFGFSPositionSetTask(connectIp,centralPointRadiusDistance,0.3,debugLevel) end
+                if positionRoute.size > 0
+                    routeListSize += 1
+                    routeList = push!(routeList,(positionRoute.marks[routeListSize].latitudeDeg,positionRoute.marks[routeListSize].longitudeDeg))
+                    findPosition = true
+                    if defaultRootPath != nothing
+                        rootPath = normpath(defaultRootPath * "/Orthophotos")
                     end
+                    println("\nConnected to Flightgear with address: $connectIp radius: $centralPointRadiusDistance path: '$(rootPath)'")
+                else
+                    print("\r$(arrow.get()) Try the frist connection to Flightgear with address: $connectIp waiting time: $(Int(round(time()-timeLastConnect))). Press CTRL+C to stop the program and exit")
+                    sleep(positionRoute.stepTime)
                 end
             end
+        end
     else
-        println("\nThe program get localization is in POINT lat-lon mode")
-        centralPointLat = setDegreeUnit(isSexagesimalUnit,parsedArgs["lat"])
-        centralPointLon = setDegreeUnit(isSexagesimalUnit,parsedArgs["lon"])
-        routeList = push!(routeList,(centralPointLat,centralPointLon))
+        if positionRoute == nothing
+            lat = parsedArgs["lat"]
+            lon = parsedArgs["lon"]
+            if lat == nothing || lon == nothing
+                # Try with connect to FGFS
+                lon = getFGFSPositionLon("127.0.0.1:5000",debugLevel)
+                lat = getFGFSPositionLat("127.0.0.1:5000",debugLevel)
+                println("\nConnected to Flightgear with address: 127.0.0.1:5000 and extract lat: $lat lon: $lon")
+            end
+            if lat == nothing || lon == nothing
+                lat = 45.66
+                lon = 9.7
+            end
+            println("\nThe program get localization is in POINT lat-lon mode")
+            centralPointLat = setDegreeUnit(isSexagesimalUnit,lat)
+            centralPointLon = setDegreeUnit(isSexagesimalUnit,lon)
+            routeList = push!(routeList,(centralPointLat,centralPointLon))
+        end
         routeListSize = 1
         if centralPointRadiusDistance == 0.0 centralPointRadiusDistance = 10.0 end
     end
@@ -1156,27 +1173,35 @@ function photoscenary(args)
     if sizeDwn == 0 sizeDwn = size end
 
     # Path prepare
-    pathFromParsed = parsedArgs["path"]
-    pathToTest = normpath(pathFromParsed)
-    if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 0
-        # The first asterisk character indicates that the path has not been changed and therefore it is possible to insert the default one
-        pathFromParsed = "fgfs-scenery/photoscenery"
-    end
-    println("\nThe program set the '$pathFromParsed' path")
-    if rootPath == nothing
-        if Base.Sys.iswindows()
-            if pathToTest[2] == ':' || pathToTest[1] == '\\'
-                rootPath = normpath(pathFromParsed * "/Orthophotos")
-            else
-                cd();
-                rootPath = normpath(pwd() * "/" * pathFromParsed * "/Orthophotos")
+    begin
+        pathFromParsed = parsedArgs["path"]
+        if rootPath == nothing && (pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 1)
+            # The first asterisk character indicates that the path has not been changed and therefore it is possible to insert the default one
+            defaultRootPath = getFGFSPathScenery("127.0.0.1:5000",debugLevel)
+            if defaultRootPath != nothing
+                rootPath = normpath(defaultRootPath * "/Orthophotos")
+                println("\nConnected to Flightgear with address: 127.0.0.1:5000 and get the path $rootPath")
             end
-        else
-            if pathToTest[1] == '/'
-                rootPath = normpath(pathFromParsed * "/Orthophotos")
+        end
+        if rootPath == nothing
+            if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 1
+                pathFromParsed = "fgfs-scenery/photoscenery"
+                println("\nThe program configures the default '$pathFromParsed' path")
+            end
+            if Base.Sys.iswindows()
+                if (pathFromParsed != nothing) && ((lenght(pathFromParsed) >= 2 && pathFromParsed[2] == ':') || pathFromParsed[1] == '\\')
+                    rootPath = normpath(pathFromParsed * "/Orthophotos")
+                else
+                    cd();
+                    rootPath = normpath(pwd() * "/" * pathFromParsed * "/Orthophotos")
+                end
             else
-                cd();
-                rootPath = normpath(pwd() * "/" * pathFromParsed * "/Orthophotos")
+                if (pathFromParsed != nothing) && (pathFromParsed[1] == '/')
+                    rootPath = normpath(pathFromParsed * "/Orthophotos")
+                else
+                    cd();
+                    rootPath = normpath(pwd() * "/" * pathFromParsed * "/Orthophotos")
+                end
             end
         end
     end
@@ -1210,7 +1235,6 @@ function photoscenary(args)
     totalBytePNG = 0
 
     while routeListStep <= routeListSize
-
         if routeListSize > 1
             println("\n---------- Route step $routeListStep on $routeListSize ----------")
         end

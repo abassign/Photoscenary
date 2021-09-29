@@ -127,6 +127,9 @@ function getFGFSValues(s::String,typeOfdata::Char)
         if typeOfdata == 's'
             a = split(s,"=")
             return split(a[2],"'")[2]
+        elseif typeOfdata == 'f'
+            a = split(s,"=")
+            return parse(Float64,split(a[2],"'")[2])
         end
     catch
     end
@@ -144,6 +147,50 @@ function getFGFSPathScenery(ipAddressAndPort,debugLevel::Int)
             if retray == 1 write(telnet.sock,string("get /sim/fg-scenery","\r\n")) end
             if size(telnet.telnetData)[1] > 0
                 return getFGFSValues(telnet.telnetData[1],'s')
+            end
+            retray += 1
+        end
+        debugLevel > 1 && println("\ngetFGFSPathScenery - Sockets is close")
+        return nothing
+    catch err
+        debugLevel > 1 && println("\ngetFGFSPathScenery - Error connection: $err")
+        return nothing
+    end
+end
+
+
+function getFGFSPositionLat(ipAddressAndPort,debugLevel::Int)
+    try
+        retray = 1
+        telnet = setFGFSConnect(TelnetConnection(ipAddressAndPort),debugLevel)
+        sleep(0.5)
+        while telnetConnectionSockIsOpen(telnet) && retray <= 10
+            sleep(0.1)
+            if retray == 1 write(telnet.sock,string("get /position/latitude-deg","\r\n")) end
+            if size(telnet.telnetData)[1] > 0
+                return getFGFSValues(telnet.telnetData[1],'f')
+            end
+            retray += 1
+        end
+        debugLevel > 1 && println("\ngetFGFSPathScenery - Sockets is close")
+        return nothing
+    catch err
+        debugLevel > 1 && println("\ngetFGFSPathScenery - Error connection: $err")
+        return nothing
+    end
+end
+
+
+function getFGFSPositionLon(ipAddressAndPort,debugLevel::Int)
+    try
+        retray = 1
+        telnet = setFGFSConnect(TelnetConnection(ipAddressAndPort),debugLevel)
+        sleep(0.5)
+        while telnetConnectionSockIsOpen(telnet) && retray <= 10
+            sleep(0.1)
+            if retray == 1 write(telnet.sock,string("get /position/longitude-deg","\r\n")) end
+            if size(telnet.telnetData)[1] > 0
+                return getFGFSValues(telnet.telnetData[1],'f')
             end
             retray += 1
         end
