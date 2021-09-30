@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.12"
-versionProgramDate = "20210929"
+versionProgram = "0.3.14"
+versionProgramDate = "20210930"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -1184,18 +1184,23 @@ function photoscenary(args)
             end
         end
         if rootPath == nothing
-            if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 1
-                pathFromParsed = "fgfs-scenery/photoscenery"
-                println("\nThe program configures the default '$pathFromParsed' path")
-            end
             if Base.Sys.iswindows()
-                if (pathFromParsed != nothing) && ((lenght(pathFromParsed) >= 2 && pathFromParsed[2] == ':') || pathFromParsed[1] == '\\')
-                    rootPath = normpath(pathFromParsed * "/Orthophotos")
-                else
+                if (pathFromParsed == nothing)
                     cd();
-                    rootPath = normpath(pwd() * "/" * pathFromParsed * "/Orthophotos")
+                    rootPath = pwd() * "\\fgfs-scenery\\photoscenery"
+                else
+                    if (length(pathFromParsed) >= 2 && pathFromParsed[2] == ':') && (pathFromParsed[1] != '\\')
+                        rootPath = normpath(pathFromParsed * "\\Orthophotos")
+                    else
+                        cd();
+                        rootPath = normpath(pwd() * "\\" * pathFromParsed * "\\Orthophotos")
+                    end
                 end
             else
+                if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 1
+                    pathFromParsed = "fgfs-scenery/photoscenery"
+                    println("\nThe program configures the default '$pathFromParsed' path")
+                end
                 if (pathFromParsed != nothing) && (pathFromParsed[1] == '/')
                     rootPath = normpath(pathFromParsed * "/Orthophotos")
                 else
