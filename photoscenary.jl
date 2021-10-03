@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.14"
-versionProgramDate = "20210930"
+versionProgram = "0.3.15"
+versionProgramDate = "20211003"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -978,12 +978,14 @@ function parseCommandline(args)
         end
     else
         try
-            if outfile == nothing outfile = "args.txt" end
-            f = open(outfile, "w")
-            for i in eachindex(args)
-                println(f, args[i])
+            if outfile == nothing
+                outfile = "args.txt"
+                f = open(outfile, "w")
+                for i in eachindex(args)
+                    println(f, args[i])
+                end
+                println("\nArguments (params) saved in the file: $outfile")
             end
-            println("\nArguments (params) saved in the file: $outfile")
         catch
         end
     end
@@ -1175,7 +1177,7 @@ function photoscenary(args)
     # Path prepare
     begin
         pathFromParsed = parsedArgs["path"]
-        if rootPath == nothing && (pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 1)
+        if rootPath == nothing && (pathFromParsed == nothing || length(pathFromParsed) == 0 || contains(pathFromParsed,'*'))
             # The first asterisk character indicates that the path has not been changed and therefore it is possible to insert the default one
             defaultRootPath = getFGFSPathScenery("127.0.0.1:5000",debugLevel)
             if defaultRootPath != nothing
@@ -1197,9 +1199,9 @@ function photoscenary(args)
                     end
                 end
             else
-                if pathFromParsed == nothing || length(pathFromParsed) == 0 || cmp(pathFromParsed,"*") == 1
+                if pathFromParsed == nothing || length(pathFromParsed) == 0 || contains(pathFromParsed,'*')
                     pathFromParsed = "fgfs-scenery/photoscenery"
-                    println("\nThe program configures the default '$pathFromParsed' path")
+                    println("\nThe program try to configures the default '$pathFromParsed' path")
                 end
                 if (pathFromParsed != nothing) && (pathFromParsed[1] == '/')
                     rootPath = normpath(pathFromParsed * "/Orthophotos")
