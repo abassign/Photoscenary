@@ -1,0 +1,4 @@
+Automatic generation of tiles along the route with maximum efficiency and quality
+https://wiki.flightgear.org/Julia_photoscenery_generator#Generation_of_tiles_along_the_route_with_maximum_efficiency_and_quality
+
+julia -t 3 photoscenary.jl --connect "127.0.0.1:5000" -s 4 -r 20 --over 2 --sdwn 1

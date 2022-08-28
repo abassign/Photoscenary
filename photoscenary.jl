@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.15"
-versionProgramDate = "20211003"
+versionProgram = "0.3.16"
+versionProgramDate = "20220822"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -116,6 +116,7 @@ begin
         end
         if restartIsRequestCauseUpgrade >= 1
             println("\nInstal the packeges necessary for photoscenary.jl execution")
+            Pkg.add("MemPool")
             Pkg.add("Dates")
             Pkg.add("Unicode")
             Pkg.add("Downloads")
@@ -973,8 +974,8 @@ function parseCommandline(args)
             end
             parsed_args = parse_args(args,s)
             println("\nArguments (params) read from the file: $outfile")
-        catch
-            println("\nArguments (params) default arguments")
+        catch err
+            println("\nError to load arguments (params) put the default arguments\nerr: $err")
         end
     else
         try
