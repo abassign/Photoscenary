@@ -1,0 +1,12 @@
+--save
+/media/abassign/save_2021/data/fgfs-scenery/photoscenery
+--connect
+127.0.0.1:5000
+-s
+5
+-r
+20
+--over
+1
+--sdwn
+1

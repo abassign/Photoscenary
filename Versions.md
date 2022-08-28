@@ -69,7 +69,7 @@ Upon a user recommendation, I have inserted the automatic rebuild of the airport
 ### Pkg.build("CodecZlib")
 The CodecZlib module is sometimes problematic in version management if highly complex packages are installed. The only practical solution is to require the module to be recompiled with the Pkg.build function. Not being able to know the actual installation status of the files, I found it much more convenient to run this command anyway even if the CodecZlib module was well installed.
 
-## 0.3.12 date 20210929
+## 0.3.14 date 20210929
 
 ### A method has been added for automatic loading of the aircraft position (lat and lon parameters)
 A method has been added for automatic loading of the aircraft position (lat and lon parameters) when they are not defined and when FGFS has enabled the telnet connection via the FGFS launch parameter:
@@ -78,3 +78,9 @@ In this way it is possible to execute photoscenary.jl without parameters, loadin
 
 ### Fixed the bug for windows that could freeze the program, as reported by a user
 The bug was due to a different management of the paths by windows compared to the Linux environment.
+
+## 0.3.15 date 20211003
+
+### Fixed the bug path for linux
+Under certain conditions the program does not take the path defined as a parameter, the problem has been solved by modifying a path analysis function.
+
