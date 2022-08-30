@@ -86,6 +86,7 @@ begin
     try
         import ImageMagick
         import Unicode: graphemes # To solve the problem of an error in extracting unicode characters from a string.
+        using MemPool
         using Dates
         using Unicode
         using Downloads
