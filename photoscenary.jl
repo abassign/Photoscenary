@@ -680,7 +680,7 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
         # Check the image is present
         if isPngFileFormatOnly
             if isfile(imageWithPathTypeDDS) TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
-            dataFileImagePNG = getPNGSize(imageWithPathTypePNG)
+            dataFileImagePNG = Commons.getPNGSize(imageWithPathTypePNG)
             if dataFileImagePNG[1]
                 if overWriteTheTiles >= 9
                     TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
