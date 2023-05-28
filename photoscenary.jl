@@ -285,6 +285,11 @@ struct MapCoordinates
 
 end
 
+function debugMsg(debugLevel,logLvl, msg, printFunc = "println")
+    if debugLevel > logLvl 
+        if printFunc == "println" println(msg) else @warn msg end
+    end
+end
 
 function getSizePixel(size)
     if size <= 0
@@ -545,14 +550,14 @@ function imageQuality(image, debugLevel)
         try
             img = ImageView.load(image)
             sizeImg = size(img)[1]*size(img)[2]
-            if debugLevel > 0 println("imageQuality - The file $image id downloaded the size is: $sizeImg") end
+            debugMsg(debugLevel, 0, "imageQuality - The file $image id downloaded the size is: $sizeImg") 
             return sizeImg
         catch err
-            if debugLevel > 1 println("Error: imageQuality - The file $image is not downloaded") end
+            debugMsg(debugLevel, 1, "Error: imageQuality - The file $image is not downloaded") 
             return -2
         end
     else
-        if debugLevel > 1 println("Error: imageQuality - The file $image is not present") end
+        debugMsg(debugLevel, 1, "Error: imageQuality - The file $image is not present") 
         return -1
     end
 end
@@ -576,7 +581,7 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
         return downloadPNGIsComplete,time()-t0,xy,imageMatrix
     end
     # HTTPD options from https://juliaweb.github.io/HTTP.jl/dev/public_interface/
-    if debugLevel > 0 @warn "downloadImage - HTTP image start to download url: $servicesWebUrl" end
+    debugMsg(debugLevel, 0, "downloadImage - HTTP image start to download url: $servicesWebUrl","warn")
     tryDownloadFileImagePNG = 1
     while tryDownloadFileImagePNG <= 2 && downloadPNGIsComplete == 0
         io = IOBuffer(UInt8[], read=true, write=true)
@@ -592,17 +597,17 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
                 try
                     ## imageMatrix[1 + sizeHight - (szHight * y):sizeHight - szHight * (y - 1),1 + szWidth * (x - 1):szWidth * x] = load(Stream(format"PNG", io))
                     imageMatrix = Images.load(Stream(format"PNG", io))
-                    if debugLevel > 0 println(" ") end
+                    debugMsg(debugLevel, 0, " ") 
                     # Print actual status
                     print("\rThe image in ",@sprintf("%03.3f,%03.3f,%03.3f,%03.3f",loLL,laLL,loUR,laUR)," load in the matrix: x = $x y = $y Task: $task th: $(Threads.threadid()) try: $tryDownloadFileImagePNG",@sprintf(" time: %3.2f",(time()-t0)))
                     downloadPNGIsComplete = 1
                 catch err
-                    if debugLevel > 1 @warn "Error: downloadImage #2 - load image $imageWithPathTypePNG is not downloaded, error id: $err" end
+                    debugMsg(debugLevel, 1, "Error: downloadImage #2 - load image $imageWithPathTypePNG is not downloaded, error id: $err","warn")
                 end
             end
         catch err
             # Typical error type 500
-            if debugLevel > 1 @warn "Error: downloadImage #3 - load image $imageWithPathTypePNG generic error id: $err" end
+            debugMsg(debugLevel, 1, "Error: downloadImage #3 - load image $imageWithPathTypePNG generic error id: $err","warn")
             tryDownloadFileImagePNG += 1
         end
         close(io)
@@ -646,9 +651,9 @@ function downloadImages(tp,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
     if downloadPNGIsCompleteNumber > 0
         try
             Images.save(imageWithPathTypePNG,imageMatrix)
-            if debugLevel > 0 println("downloadImage - The file $imageWithPathTypePNG is downloaded") end
+            debugMsg(debugLevel, 0, "downloadImage - The file $imageWithPathTypePNG is downloaded") 
         catch
-            if debugLevel > 1 println("Error: downloadImage - to download the $imageWithPathTypePNG file, error id: ",err) end
+            debugMsg(debugLevel, 1, "Error: downloadImage - to download the $imageWithPathTypePNG file, error id: ",err) 
             if isfile(imageWithPathTypePNG) rm(imageWithPathTypePNG) end
         end
     else
@@ -680,7 +685,7 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
         # Check the image is present
         if isPngFileFormatOnly
             if isfile(imageWithPathTypeDDS) TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave) end
-            dataFileImagePNG = getPNGSize(imageWithPathTypePNG)
+            dataFileImagePNG = Commons.getPNGSize(imageWithPathTypePNG)
             if dataFileImagePNG[1]
                 if overWriteTheTiles >= 9
                     TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
@@ -747,7 +752,7 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
             if !isfileImagePNG
                 TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
                 (foundIndex,foundPath,toPath,isSkip) = TilesDatabase.copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath,format)
-                if debugLevel > 0 println("createDDSorPNGFile - copyTilesByIndex foundIndex: $foundIndex | foundPath: $foundPath | toPath: $toPath | tileDatabase: $tileDatabase | tileIndex: $tileIndex | tp[12]: $(tp[12])") end
+                debugMsg(debugLevel, 0, "createDDSorPNGFile - copyTilesByIndex foundIndex: $foundIndex | foundPath: $foundPath | toPath: $toPath | tileDatabase: $tileDatabase | tileIndex: $tileIndex | tp[12]: $(tp[12])") 
             else
                 foundIndex = nothing
             end
@@ -774,16 +779,16 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
                         try
                             fileSizePNG = stat(imageWithPathTypePNG).size
                             fileSizeDDS = 0
-                            if debugLevel > 0 println("createDDSorPNGFile - The file $imageWithPathTypePNG is created") end
+                            debugMsg(debugLevel, 0, "createDDSorPNGFile - The file $imageWithPathTypePNG is created") 
                             theBatchIsNotCompleted = false
                             theDDSorPNGFileIsOk = 1
                             timeElaboration = time() - t0
                         catch err
-                            if debugLevel > 1 println("createDDSorPNGFile - Error to create $imageWithPathTypePNG file in png format") end
+                            debugMsg(debugLevel, 1, "createDDSorPNGFile - Error to create $imageWithPathTypePNG file in png format") 
                             try
                                 rm(imageWithPathTypePNG)
                             catch
-                                if debugLevel > 1 println("createDDSorPNGFile - Error to remove the $imageWithPathTypePNG file") end
+                                debugMsg(debugLevel, 1, "createDDSorPNGFile - Error to remove the $imageWithPathTypePNG file") 
                             end
                             theBatchIsNotCompleted = true
                             if theDDSorPNGFileIsOk == 0 theDDSorPNGFileIsOk = -10 end
@@ -809,17 +814,17 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
                                 run(`$imageMagickWithPathUnix $imageWithPathTypePNG -define dds:mipmaps=0 -define dds:compression=dxt1 $imageWithPathTypeDDS`)
                             end
                             fileSizeDDS = stat(imageWithPathTypeDDS).size
-                            if debugLevel > 0 println("createDDSorPNGFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") end
+                            debugMsg(debugLevel, 0, "createDDSorPNGFile - The file $imageWithPathTypeDDS is converted in the DDS file: $imageWithPathTypeDDS") 
                             rm(imageWithPathTypePNG)
                             theBatchIsNotCompleted = false
                             oldFileIsPresent ? theDDSorPNGFileIsOk = 2 : theDDSorPNGFileIsOk = 1
                             timeElaboration = time() - t0
                         catch err
-                            if debugLevel > 1 println("createDDSorPNGFile - Error to convert the $imageWithPathTypePNG file in dds format") end
+                            debugMsg(debugLevel, 1, "createDDSorPNGFile - Error to convert the $imageWithPathTypePNG file in dds format") 
                             try
                                 rm(imageWithPathTypePNG)
                             catch
-                                if debugLevel > 1 println("createDDSorPNGFile - Error to remove the $imageWithPathTypePNG file") end
+                                debugMsg(debugLevel, 1, "createDDSorPNGFile - Error to remove the $imageWithPathTypePNG file") 
                             end
                             theBatchIsNotCompleted = true
                             if theDDSorPNGFileIsOk == 0 theDDSorPNGFileIsOk = -10 end
@@ -1295,16 +1300,16 @@ function photoscenary(args)
                 " to $(getSizePixel(sizeDwn)[1]) | $(getSizePixel(sizeDwn)[2]) pix",
                 " Cycle: $unCompletedTilesAttemps",
                 "\nThe images path is: $rootPath\n")
-            if debugLevel >= 3 println("Debug set program #3.1") end
+            debugMsg(debugLevel, 3, "Debug set program #3.1")
             while cmgsExtractTest(cmgs)
                 threadsActive = 0
                 Threads.@threads for cmg in cmgsExtract(cmgs)
-                    if debugLevel >= 3 println("Debug set program #3.2.1") end
+                    debugMsg(debugLevel, 3,"Debug set program #3.2.1")
                     threadsActive += 1
                     theBatchIsNotCompleted = false
                     (theBatchIsNotCompleted,tileIndex,theDDSorPNGFileIsOk,timeElaboration,tile,pathRel,fileSizePNG,fileSizeDDS) = createDDSorPNGFile(rootPath,cmg,overWriteTheTiles,imageMagickPath,mapServer,tileDatabase,isPngFileFormatOnly,pathToSave,debugLevel)
                     if theDDSorPNGFileIsOk >= 1
-                        if debugLevel >= 3 println("Debug set program #3.2.1") end
+                        debugMsg(debugLevel, 3, "Debug set program #3.2.1")
                         numbersOfTilesElaborate += 1
                         if timeElaboration != nothing && theBatchIsNotCompleted == false
                             timeElaborationForAllTilesInserted += timeElaboration
@@ -1315,7 +1320,7 @@ function photoscenary(args)
                             unCompletedTilesNumber -= 1
                         end
                     elseif theBatchIsNotCompleted
-                        if debugLevel >= 3 println("Debug set program #3.2.2") end
+                        debugMsg(debugLevel, 3, "Debug set program #3.2.2")
                         if haskey(unCompletedTiles,tileIndex)
                             push!(unCompletedTiles,tileIndex => unCompletedTiles[tileIndex] + 1)
                         else
@@ -1324,10 +1329,10 @@ function photoscenary(args)
                         if ifFristCycle unCompletedTilesNumber += 1 end
                     else
                         numbersOfTilesElaborate += 1
-                        if debugLevel >= 3 println("Debug set program #3.2.3") end
+                        debugMsg(debugLevel, 3, "Debug set program #3.2.3")
                     end
                     if theDDSorPNGFileIsOk != 0
-                        if debugLevel >= 3 println("Debug set program #3.2.4") end
+                        debugMsg(debugLevel, 3, "Debug set program #3.2.4")
                         if theDDSorPNGFileIsOk == 1
                             totalBytePNG += fileSizePNG
                             totalByteDDS += fileSizeDDS
@@ -1347,7 +1352,7 @@ function photoscenary(args)
                         elseif theDDSorPNGFileIsOk <= -10
                             theDDSorPNGFileIsOkStatus = "(HTTP! $theDDSorPNGFileIsOk) "
                         end
-                        if debugLevel >= 3 println("Debug set program #3.2.5") end
+                        debugMsg(debugLevel, 3, "Debug set program #3.2.5")
                         timeElaborationForAllTilesResidual = (timeElaborationForAllTilesInserted / numbersOfTilesInserted) * numbersOfTilesToElaborate / Threads.nthreads()
                         println('\r',
                             @sprintf("Time: %6d",time()-timeStart),
@@ -1367,7 +1372,7 @@ function photoscenary(args)
                             theDDSorPNGFileIsOkStatus
                         )
                     else
-                        if debugLevel >= 3 println("Debug set program #3.2.6") end
+                        debugMsg(debugLevel, 3, "Debug set program #3.2.6")
                         totalBytePNG += fileSizePNG
                     end
                 end
