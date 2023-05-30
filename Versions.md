@@ -1,5 +1,10 @@
 # Versioning
 
+## 0.4.0 date 20230523
+
+This version is being developed to update the previous one from 2021.
+The reason for the update is due to the fact that the latest versions of Julia (18 and 19) no longer use certain libraries, so when someone updates Julia, they find that the compilation no longer succeeds. That's why I modified some pieces of code, especially the code in the TilesDatabase.jl module, followed by the Route.jl and photoscenary.jl modules, in order to make the database management library (deprecated JuliaDB) compatible with DataFrames.jl, which is now the standard library for non-SQL databases in Julia. The downloadImage() module has also been modified, leveraging the powerful Images library with the download() method. This resolves potential download issues with errors in the length of files present using the old GET method.
+
 ## 0.3.4 date 20210809
 
 Correction of Unicode characters (Aa for example Chinese characters) in file names as https://docs.julialang.org/en/v1/manual/strings/#Unicode-and-UTF-8

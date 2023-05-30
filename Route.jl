@@ -9,8 +9,10 @@ module Route
     using Unicode
     using LightXML
     using Geodesy
-    using JuliaDB
     using Printf
+    using CSV
+    using DataFrames
+    using Serialization
 
     include("./Commons.jl")
     include("./ScanDir.jl")
@@ -61,47 +63,44 @@ module Route
         retrayNumber = 0
         # Test the DB csv or jdb
         while retrayNumber <= 1
-            if stat("airports.csv").mtime > stat("airports.jdb").mtime
-                println("\nThe airports database 'airports.csv' is loading for conversion to airports.jdb file")
-                JuliaDB.save(JuliaDB.loadtable("airports.csv"),"airports.jdb")
-                println("The airports database 'airports.jdb' is converted")
-            elseif stat("airports.jdb").mtime == 0.0
-                println("\nError: The airports.jdb file and airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory")
+            if stat("airports.csv").mtime > stat("airports.jls").mtime
+                println("\nThe airports database 'airports.csv' is loading for conversion to airports.jls file")
+                serialize("airports.jls",DataFrame(CSV.File("airports.csv")))
+                println("The airports database 'airports.jls' is converted")
+            elseif stat("airports.jls").mtime == 0.0
+                println("\nError: The airports.jls file and airports.csv file is unreachable!\nPlease, make sure it is present in the photoscenary.jl program directory")
                 errorCode = 403
                 retrayNumber = 9
             end
             if errorCode == 0
                 try
-                    db = JuliaDB.load("airports.jdb")
+                    db = deserialize("airports.jls")
                     # println("\nThe airports database 'airports.csv' is loading")
                     searchString = Unicode.normalize(uppercase(icaoToSelect),stripmark=true)
                     # Frist step try with ICAO ident
                     foundDatas = filter(i -> (i.ident == searchString),db)
-                    if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                        foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.municipality),stripmark=true)),db)
+                    if size(foundDatas)[1] == 0
+                        foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.municipality),stripmark=true)),dropmissing(df,:municipality))
                     end
-                    if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 0
-                        foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.name),stripmark=true)),db)
+                    if size(foundDatas)[1] == 0
+                        foundDatas = filter(i -> occursin(searchString,Unicode.normalize(uppercase(i.name),stripmark=true)),dropmissing(df,:name))
                     end
-                    if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] == 1
+                    if size(foundDatas)[1] == 1
                         if centralPointRadiusDistance == nothing || centralPointRadiusDistance <= 1.0 centralPointRadiusDistance = 10.0 end
-                        centralPointLat = foundDatas[1][:latitude_deg]
-                        centralPointLon = foundDatas[1][:longitude_deg]
+                        centralPointLat = foundDatas[1,:latitude_deg]
+                        centralPointLon = foundDatas[1,:longitude_deg]
                         # Some airports have the location data multiplied by a thousand, in this case we proceed to the reduction
                         if !(Commons.inValue(centralPointLat,90) && Commons.inValue(centralPointLon,180))
                             if abs(centralPointLat) > 1000.0 centralPointLat /= 1000.0 end
                             if abs(centralPointLon) > 1000.0 centralPointLon /= 1000.0 end
                         end
-                        println("\nThe ICAO term $(icaoToSelect) is found in the database\n\tIdent: $(foundDatas[1][:ident])\n\tName: $(foundDatas[1][:name])\n\tCity: $(foundDatas[1][:municipality])\n\tCentral point lat: $(round(centralPointLat,digits=4)) lon: $(round(centralPointLon,digits=4)) radius: $centralPointRadiusDistance nm")
+                        println("\nThe ICAO term $(icaoToSelect) is found in the database\n\tIdent: $(foundDatas[1,:ident])\n\tName: $(foundDatas[1,:name])\n\tCity: $(foundDatas[1,:municipality])\n\tCentral point lat: $(round(centralPointLat,digits=4)) lon: $(round(centralPointLon,digits=4)) radius: $centralPointRadiusDistance nm")
                     else
-                        if JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1] > 1
+                        if size(foundDatas)[1] == 0 > 1
                             errorCode = 401
-                            println("\nError: The ICAO search term $(icaoToSelect) is ambiguous, there are $(JuliaDB.size(JuliaDB.select(foundDatas,:ident))[1]) airports with a similar term")
-                            cycle = 0
-                            for data in foundDatas
-                                println("\tId: $(data[:ident])\tname: $(data[:name]) ($(data[:municipality]))")
-                                cycle += 1
-                                if cycle > 30 break end
+                            println("\nError: The ICAO search term $(icaoToSelect) is ambiguous, there are $(size(foundDatas)[1]) airports with a similar term")
+                            for i in 1:min(size(foundDatas)[1],30)
+                                println("\tId: $(foundDatas[i,:ident])\tname: $(foundDatas[i,:name]) ($(foundDatas[i,:municipality]))")
                             end
                         else
                             errorCode = 400
@@ -112,10 +111,10 @@ module Route
                 catch err
                     if retrayNumber == 0
                         retrayNumber = 1
-                        rm("airports.jdb", force=true)
-                        println("\nError: The airports.jdb file is corrupt\n\tI make an attempt to regenerate the file using the data from the file: airports.csv")
+                        println("\nError: The airports.csv file is corrupt or not exist")
+                        errorCode = 403
                     else
-                        println("\nError: The airports.jdb file is corrupt\n\tPlease, make sure if airports.csv file is present in the program directory\n\tRemove the corrupt airports.jdb file and restart the program\nError code is $err")
+                        println("\nError: The airports.csv file is corrupt\n\tPlease, make sure if airports.csv file is present in the program directory\n\tand restart the program\nError code is $err")
                         errorCode = 404
                         retrayNumber = 9
                     end
