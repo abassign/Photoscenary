@@ -63,8 +63,8 @@ else
 end
 
 
-versionProgram = "0.3.16"
-versionProgramDate = "20220822"
+versionProgram = "0.4.00"
+versionProgramDate = "20230523"
 
 homeProgramPath = pwd()
 unCompletedTiles = Dict{Int64,Int64}()
@@ -78,7 +78,7 @@ begin
 
     try
         ##using ImageView
-        using JuliaDB
+        ##using JuliaDB Obsolete!
     catch
         restartIsRequestCauseUpgrade = 2
     end
@@ -99,13 +99,17 @@ begin
         using FileIO
         using Images    # Warning: 20210910 possible problems with PLMakie
         using ImageIO
+        using CSV
         using DataFrames
         using DataFramesMeta
+        using Serialization
+        using IndexedTables
         using Geodesy
         using Parsers
         using Sockets
         using EzXML
         using ThreadSafeDicts
+        using Logging
     catch
         if restartIsRequestCauseUpgrade == 0 restartIsRequestCauseUpgrade = 1 end
     end
@@ -113,7 +117,7 @@ begin
     try
         if restartIsRequestCauseUpgrade >= 2
             ##Pkg.add("ImageView") # If this is execute is necessary to restart Julia
-            Pkg.add("JuliaDB")
+            ##Pkg.add("JuliaDB")
         end
         if restartIsRequestCauseUpgrade >= 1
             println("\nInstal the packeges necessary for photoscenary.jl execution")
@@ -131,15 +135,19 @@ begin
             Pkg.add("FileIO")
             Pkg.add("Images")
             Pkg.add("ImageIO")
+            Pkg.add("CSV")
             Pkg.add("DataFrames")
             Pkg.add("DataFramesMeta")
+            Pkg.add("Serialization")
+            Pkg.add("IndexedTables")
             Pkg.add("Geodesy")
             Pkg.add("Parsers")
             Pkg.add("Sockets")
             Pkg.add("EzXML")
             Pkg.add("ThreadSafeDicts")
+            Pkg.add("Logging")
             # Sometimes this package has problems with other packages installed in Julia it is better to run this command:
-            Pkg.build("CodecZlib")
+            ## Pkg.build("CodecZlib")
             # The installation of the packages is complete
             println("\nThe Julia system has been updated")
         end
@@ -155,7 +163,9 @@ begin
 
 end
 
+# It is essential to insert this declaration to allow the sharing of the image arrays
 @everywhere using SharedArrays
+#@distributed using SharedArrays
 
 try
     include("./Commons.jl")
@@ -559,7 +569,6 @@ end
 
 
 function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageWithPathTypePNG,task,mapServer::MapServer,debugLevel)
-    # /World_Imagery/MapServer/export?bbox=16.0,38.0,16.125,38.0625&bboxSR=4326&size=4096,2048&imageSR=4326&format=png24&f=image
     x = xy[1]
     y = xy[2]
     imageMatrix = zeros(RGB{N0f8},szHight,szWidth)
@@ -569,44 +578,25 @@ function downloadImage(xy,lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imag
     laUR = latLL + y * ΔLat
     t0 = time()
     downloadPNGIsComplete = 0
-    #servicesWebUrlBase = "http://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?"
-    #servicesWebUrl = servicesWebUrlBase * "bbox=$loLL,$laLL,$loUR,$laUR&bboxSR=4326&size=$szWidth,$szHight&imageSR=4326&format=png24&f=image"
     (servicesWebUrl,errorCode) = getMapServer(mapServer,laLL,loLL,laUR,loUR,szWidth,szHight)
     if errorCode > 0
         return downloadPNGIsComplete,time()-t0,xy,imageMatrix
     end
-    # HTTPD options from https://juliaweb.github.io/HTTP.jl/dev/public_interface/
     if debugLevel > 0 @warn "downloadImage - HTTP image start to download url: $servicesWebUrl" end
     tryDownloadFileImagePNG = 1
     while tryDownloadFileImagePNG <= 2 && downloadPNGIsComplete == 0
-        io = IOBuffer(UInt8[], read=true, write=true)
         try
-            r = HTTP.request("GET",servicesWebUrl,response_stream = io,proxy=mapServer.proxy)
-            if r == nothing || (r != nothing && r.status != 200)
-                if debugLevel > 1 @warn "Error: downloadImage #1 - HTTP image download code: " * r.status * " residual try: $tryDownloadFileImagePNG" end
-                tryDownloadFileImagePNG += 1
-            else
-                # In Julia there is a copy function between matrices which foresees to define the coordinates of the starting point.
-                # This function is extremely efficient and fast, it allows to obtain a matrix of images.
-                # Es: imageMatrix[1 + h * (y - 1):h * y,1 + w * (x - 1):w * x] = img
-                try
-                    ## imageMatrix[1 + sizeHight - (szHight * y):sizeHight - szHight * (y - 1),1 + szWidth * (x - 1):szWidth * x] = load(Stream(format"PNG", io))
-                    imageMatrix = Images.load(Stream(format"PNG", io))
-                    if debugLevel > 0 println(" ") end
-                    # Print actual status
-                    print("\rThe image in ",@sprintf("%03.3f,%03.3f,%03.3f,%03.3f",loLL,laLL,loUR,laUR)," load in the matrix: x = $x y = $y Task: $task th: $(Threads.threadid()) try: $tryDownloadFileImagePNG",@sprintf(" time: %3.2f",(time()-t0)))
-                    downloadPNGIsComplete = 1
-                catch err
-                    if debugLevel > 1 @warn "Error: downloadImage #2 - load image $imageWithPathTypePNG is not downloaded, error id: $err" end
-                end
-            end
+            imageMatrix = Images.load(Images.download(servicesWebUrl))
+            if debugLevel > 0 println(" ") end
+            print("\rThe image in ",@sprintf("%03.3f,%03.3f,%03.3f,%03.3f",loLL,laLL,loUR,laUR)," load in the matrix: x = $x y = $y Task: $task th: $(Threads.threadid()) try: $tryDownloadFileImagePNG",@sprintf(" time: %3.2f",(time()-t0)))
+            downloadPNGIsComplete = 1
         catch err
             # Typical error type 500
-            if debugLevel > 1 @warn "Error: downloadImage #3 - load image $imageWithPathTypePNG generic error id: $err" end
+            if debugLevel > 1 @warn "Error: downloadImage #3 - load image $imageWithPathTypePNG generic error id: $err tryDownloadFileImagePNG: $tryDownloadFileImagePNG" end
             tryDownloadFileImagePNG += 1
         end
-        close(io)
     end
+    if debugLevel > 2 @warn "DownloadImage #5" end
     return downloadPNGIsComplete,time()-t0,xy,imageMatrix
 end
 
@@ -619,7 +609,10 @@ function downloadImages(tp,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
     cols = tp[13]
     sizeWidth = tp[12]
     sizeHight = Int(sizeWidth / (8 * Commons.tileWidth((latUR + latLL) / 2.0)))
-    #imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
+    if debugLevel > 2
+        println("downloadImages - tp: $tp mapServer: $(mapServer.webUrlBase)")
+        println("downloadImages - sizeHight: $sizeHight sizeWidth: $sizeWidth")
+    end
     imageMatrix = SharedArray(zeros(RGB{N0f8},sizeHight,sizeWidth))
     downloadPNGIsCompleteNumber = 0
     szWidth = Int(sizeWidth / cols)
@@ -629,6 +622,7 @@ function downloadImages(tp,imageWithPathTypePNG,mapServer::MapServer,debugLevel)
     indexValues = [(x,y) for x in 1:cols for y in 1:cols]
     fs = Dict{Int,Any}()
     @sync for task in 1:(cols*cols)
+        if debugLevel > 1 println("downloadImages - indexValues[$task]: indexValues[task]") end
         @async fs[task] = downloadImage(indexValues[task],lonLL,latLL,ΔLat,ΔLon,szWidth,szHight,sizeHight,imageWithPathTypePNG,task,mapServer,debugLevel)
     end
     res = Dict{Int,Tuple{Int64, Float64, Tuple{Int64, Int64}, Matrix{RGB{N0f8}}}}()
@@ -670,8 +664,11 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
     fileSizeDDS = 0
     format = isPngFileFormatOnly ? 0 : 1
     isfileImagePNG = false
-
     path = setPath(rootPath,tp[1],tp[2])
+    if debugLevel > 2
+        println("createDDSorPNGFile - tp: $tp path: $path overWriteTheTiles: $overWriteTheTiles imageMagickPath: $imageMagickPath")
+        println("createDDSorPNGFile - mapServer $mapServer isPngFileFormatOnly: $isPngFileFormatOnly pathToSave: $pathToSave")
+    end
     if path != nothing
         createDDSorPNGFile = false
         tileIndex = tp[7]
@@ -744,16 +741,17 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
         end
         if createDDSorPNGFile
             # Check if there is a file somewhere that could be used as DDS
+            dataFound::Union{Tuple{Int64,String,String,Bool},Nothing} = nothing
             if !isfileImagePNG
                 TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
-                (foundIndex,foundPath,toPath,isSkip) = TilesDatabase.copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath,format)
-                if debugLevel > 0 println("createDDSorPNGFile - copyTilesByIndex foundIndex: $foundIndex | foundPath: $foundPath | toPath: $toPath | tileDatabase: $tileDatabase | tileIndex: $tileIndex | tp[12]: $(tp[12])") end
-            else
-                foundIndex = nothing
+                if debugLevel > 2 println("createDDSorPNGFile - tileIndex: $tileIndex") end
+                dataFound = TilesDatabase.copyTilesByIndex(tileDatabase,tileIndex,tp[12],rootPath,format)
+                if debugLevel > 2 println("createDDSorPNGFile - dataFound: $dataFound") end
             end
-            if foundIndex != nothing
+            if debugLevel > 2 println("createDDSorPNGFile - dataFound (2): $dataFound") end
+            if dataFound != nothing
                 theBatchIsNotCompleted = false
-                isSkip ? theDDSorPNGFileIsOk = -3 : theDDSorPNGFileIsOk = 3
+                dataFound[4] ? theDDSorPNGFileIsOk = -3 : theDDSorPNGFileIsOk = 3
                 if format == 0
                     fileSizePNG = stat(imageWithPathTypePNG).size
                     fileSizeDDS = 0
@@ -763,10 +761,12 @@ function createDDSorPNGFile(rootPath,tp,overWriteTheTiles,imageMagickPath,mapSer
                 end
                 timeElaboration = time() - t0
             else
+                if debugLevel > 0 println("createDDSorPNGFile $isfileImagePNG $tileIndex $rootPath $pathToSave") end
                 # The DDS or PNG file was not found, so it must be obtained from an external site
                 if !isfileImagePNG
                     TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,0,pathToSave)
                     TilesDatabase.moveOrDeleteTiles(tileIndex,rootPath,1,pathToSave)
+                    # downloadImages section from map server
                     isfileImagePNG = downloadImages(tp,imageWithPathTypePNG,mapServer,debugLevel) > 0
                 end
                 if isPngFileFormatOnly
@@ -1233,7 +1233,8 @@ function photoscenary(args)
 
     # Generate the TileDatabase
     println("\nCreate the Tile Database\nPlease wait for a few seconds to a few minutes")
-    tileDatabase = TilesDatabase.createFilesListTypeDDSandPNG(pathToSearch,rootPath,pathToSave)
+    tileDatabase::IndexedTable = TilesDatabase.createFilesListTypeDDSandPNG(pathToSearch,rootPath,pathToSave)
+    @show tileDatabase
     println("The tiles database has been generated and verified")
 
     # Download thread
