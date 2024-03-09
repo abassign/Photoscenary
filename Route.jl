@@ -28,7 +28,7 @@ module Route
         files = Commons.findFile(fileName)
         typeOfFileSelected = Nothing
         for file in files
-            if file[3] > date
+            if file[3] >= date
                 # Test the file
                 try
                     if idTypeOfFile > 0
