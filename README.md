@@ -1,19 +1,32 @@
 # Photoscenary
-Programs to generate and manipulate photoscenaries for FGFS
+Programs to generate and manipulate photoscenaries for FGFS.
 
 The program is written entirely in JULIA and therefore requires JULIA to be installed on your system.
+It is a command line program and currently has no GUI.
+
+## Quick guide
+Elaborate instructions in a complete manual can be found at the [FlightGear Wiki](https://wiki.flightgear.org/Julia_photoscenery_generator).
+
+### Installation
+If you use Linux, chances are good your distribution already provides packages.
+Otherwise, install manually:
+
+- Install julia (version <=1.6 needed): https://julialang.org/downloads/
+- Install ImageMagick: https://imagemagick.org/script/download.php
+- Install photoscenary.jl (clone this repo, or download the [zipfile](https://github.com/abassign/Photoscenary/archive/refs/heads/main.zip))
+
+### Usage
+`julia photoscenary.jl -h` (or `--help`) will print version and usage information.
+
 The program, for basic example, you can run it with this command:
 
-julia -t 4 photoscenary.jl -p /home/user/photoscenery/Orthophotos --lat 45.66 --lon 9.7 -r 15 -s 3
+`julia -t 4 photoscenary.jl -p /home/user/photoscenery/Orthophotos --lat 45.66 --lon 9.7 -r 15 -s 3`
 
 where:
-
+```
 -p : the path of photoscenary
 --lat : the latitude of the central location of the area
 --lon : the longitude of the central location of the area
 -r : the radius of the area to be covered with the photoscenary
 -s : Max size of image in pixels 0->512 1->1024 2->2048 3->4096 4->8192 5->16384 6->32768
-     
-The complete manual has been posted on the Flightgear wiki:
-
-https://wiki.flightgear.org/Julia_photoscenery_generator
+```
