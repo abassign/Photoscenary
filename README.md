@@ -7,6 +7,8 @@ It is a command line program and currently has no GUI.
 ## Quick guide
 Elaborate instructions in a complete manual can be found at the [FlightGear Wiki](https://wiki.flightgear.org/Julia_photoscenery_generator).
 
+A list of changes / history can be found in [Versions.md](Versions.md).
+
 ### Installation
 If you use Linux, chances are good your distribution already provides packages.
 Otherwise, install manually:
