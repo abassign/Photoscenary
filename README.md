@@ -20,15 +20,28 @@ Otherwise, install manually:
 ### Usage
 `julia photoscenary.jl -h` (or `--help`) will print version and usage information.
 
+#### Basic call
+Running `julia photoscenary.jl` without arguments will run the program with the last commands.  
+They are read from the `args.txt` file in the base directory.
+
+##### Simple example using coordinates
 The program, for basic example, you can run it with this command:
 
 `julia -t 4 photoscenary.jl -p /home/user/photoscenery/Orthophotos --lat 45.66 --lon 9.7 -r 15 -s 3`
 
 where:
 ```
--p : the path of photoscenary
---lat : the latitude of the central location of the area
---lon : the longitude of the central location of the area
--r : the radius of the area to be covered with the photoscenary
--s : Max size of image in pixels 0->512 1->1024 2->2048 3->4096 4->8192 5->16384 6->32768
+-p      the path of photoscenery
+--lat   the latitude of the central location of the area
+--lon   the longitude of the central location of the area
+-r      the radius of the area to be covered with the photoscenary
+-s      Max size of image in pixels 0->512 1->1024 2->2048 3->4096 4->8192 5->16384 6->32768
 ```
+
+##### Simple example using Airport ID
+You may also download around a airport using its ICAO code (`-i <ICAO>`):
+`julia -t 4 photoscenary.jl -p /home/user/photoscenery/Orthophotos -i LIMJ -r 15 -s 3`
+
+##### Use SkyVector route
+You can use a GPX route made by skyvector to download scenery along that path (`--route <file.gpx>`):
+`julia -t 4 photoscenary.jl -p /home/user/photoscenery/Orthophotos --route https://wiki.flightgear.org/mySkyVectorRoute.gpx -r 15 -s 3`
