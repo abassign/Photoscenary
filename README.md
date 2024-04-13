@@ -18,7 +18,8 @@ Otherwise, install manually:
 - Install photoscenary.jl (clone this repo, or download the [zipfile](https://github.com/abassign/Photoscenary/archive/refs/heads/main.zip))
 
 ### Usage
-`julia photoscenary.jl -h` (or `--help`) will print version and usage information.
+- `julia photoscenary.jl -h` (or `--help`) will print version and usage information.
+- `julia photoscenary.jl --version` will print version and perform checks on needed programs.
 
 #### Basic call
 Running `julia photoscenary.jl` without arguments will run the program with the last commands.  
