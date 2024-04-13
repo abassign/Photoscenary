@@ -46,3 +46,9 @@ You may also download around a airport using its ICAO code (`-i <ICAO>`):
 ##### Use SkyVector route
 You can use a GPX route made by skyvector to download scenery along that path (`--route <file.gpx>`):
 `julia -t 4 photoscenary.jl -p /home/user/photoscenery/Orthophotos --route https://wiki.flightgear.org/mySkyVectorRoute.gpx -r 15 -s 3`
+
+### Using the tiles in FlightGear
+To make FlightGear load the downloaded tiles, you need to tell it to:
+- In the FGFS launcher, add the photoscenery folder as you would with "normal" addon scenery.
+  Just add the folder that you specified with the `-p` option as Addon-scenery (hint: it contains a sufolder named `Orthophotos`).
+- When FlightGear started, activate the option: _Menu > View > Rendering Options > Satellite Photoscenery_
