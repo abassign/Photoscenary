@@ -4,10 +4,10 @@ Programs to generate and manipulate photoscenaries for FGFS.
 The program is written entirely in JULIA and therefore requires JULIA to be installed on your system.
 It is a command line program and currently has no GUI.
 
+A list of changes / history can be found in [Versions.md](Versions.md).
+
 ## Quick guide
 Elaborate instructions in a complete manual can be found at the [FlightGear Wiki](https://wiki.flightgear.org/Julia_photoscenery_generator).
-
-A list of changes / history can be found in [Versions.md](Versions.md).
 
 The process of getting photoscenery is simple:
 1. Install the toolchain
