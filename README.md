@@ -9,6 +9,11 @@ Elaborate instructions in a complete manual can be found at the [FlightGear Wiki
 
 A list of changes / history can be found in [Versions.md](Versions.md).
 
+The process of getting photoscenery is simple:
+1. Install the toolchain
+2. Use the tool to download photoscenery tiles in the correct format
+3. Tell FlightGear to use those downloaded tiles
+
 ### Installation
 If you use Linux, chances are good your distribution already provides packages.
 Otherwise, install manually:
